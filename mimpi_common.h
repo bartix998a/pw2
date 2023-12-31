@@ -48,8 +48,24 @@ _Noreturn extern void fatal(const char* fmt, ...);
 /////////////////////////////////////////////
 // Put your declarations here
 
+#define WORLD_SIZE 2
 
+#define MIMPI_INIT 1
 
+#define MIMPI_FINALIZE 0
 
+#define MIMPI_SEND 3
+
+#define MIMPI_RECIEVE 4
+
+#define ERROR 1
+
+struct buffer {
+    void* buffor;
+    int count;
+    int tag;
+    struct buffor* next;
+};
+typedef struct buffer buffer_t;// TODO: skopiuj kod ze snake'a 
 
 #endif // MIMPI_COMMON_H
