@@ -2,6 +2,8 @@
  * This file is for implementation of mimpirun program.
  * */
 
+#define _GNU_SOURCE
+#include <stdio.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include <stdlib.h>
@@ -58,7 +60,7 @@ void runMIMPIOS(int n, int*** toChlidren, int* toMIOS, int** tree, int** toBuffe
                 response[0] = 0;
                 chsend(toChlidren[request[0]][0][1], response, sizeof(int));
             } else {
-                response[0] = toBuffer[send_request[1]];
+                response[0] = toBuffer[send_request[1]][1];
                 int destination = send_request[1];
                 chsend(toChlidren[destination][0][1], send_request, 3 * sizeof(int));
                 chsend(toChlidren[request[0]][0][1], response, sizeof(int));
@@ -81,10 +83,17 @@ void fillWithZero(char* ar){
 int main(int argc, char** argv) {
     int n = atoi(argv[1]);
     int pid = 0;
-    int toMIOS[2];// write to the second one
-    int toChildren[n + 1][2][2];// [x][0][x] - for os to send
+    int* toMIOS = (int*) malloc(2 * sizeof(int));// write to the second one
+    int*** toChildren = (int***) malloc((n + 1) * sizeof(int**));// [x][0][x] - for os to send
     int tree[n + 1][2];
     int toBuffer[n + 1][2];
+    for (int i = 0; i < n + 1; i++)
+    {
+        toChildren[i] = (int***) malloc(2 * sizeof(int*));
+        toChildren[i][0] = (int**) malloc(2 * sizeof(int));
+        toChildren[i][1] = (int**) malloc(2 * sizeof(int));
+    }
+    
     char temp[16];
     temp[9] = 0;
 
