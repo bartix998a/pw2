@@ -44,7 +44,7 @@ void runMIMPIOS(int n, int*** toChlidren, int* toMIOS, int** tree, int** toBuffe
             initialized[request[0] - 1] = false;
             initialized--;
             leftMIMPI++;
-            if (leftMIMPI == 0)
+            if (leftMIMPI == n)
             {
                 free(initialized);
                 free(buffor);
@@ -109,6 +109,11 @@ int main(int argc, char** argv) {
     for (size_t i = 0; i < n && pid == 0; i++)
     {
         pid = fork();
+        if (pid != 0)
+        {
+            pid = i + 1;
+        }
+        
     }
     
     if (pid != 0) {

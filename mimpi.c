@@ -68,6 +68,7 @@ void MIMPI_Init(bool enable_deadlock_detection) {
 void MIMPI_Finalize() {
     TODO
     // send info to main thread and finish of reciever thread
+    mimpi_send_request(MIMPI_FINALIZE);
     channels_finalize();
 }
 
