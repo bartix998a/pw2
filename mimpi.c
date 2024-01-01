@@ -24,6 +24,7 @@ static int from_OS_fd;
 static int to_rightson;
 static int to_leftson;
 static int bufferChannel;
+static int world_size;
 
 buffer_t* push_back(buffer_t* list, buffer_t* element);
 
@@ -58,6 +59,7 @@ void init_static_variables() {
     bufferChannel = result;
     recieve_buffer = malloc(sizeof(buffer_t));
     recieve_buffer->tag = -1;
+    world_size = atoi(getenv("MIMPI_world_size"));
 }
 
 void MIMPI_Init(bool enable_deadlock_detection) {
@@ -73,14 +75,7 @@ void MIMPI_Finalize() {
 }
 
 int MIMPI_World_size() {
-    int wSize = 0;
-    int fd = 0;
-    char* str;
-    mimpi_send_request(WORLD_SIZE);
-    str = getenv("MIMPI_from_OS");
-    sscanf(str, "%d", &fd);
-    chrecv(fd, &wSize, sizeof(int));
-    return wSize;
+    return world_size;
 }
 
 int MIMPI_World_rank() {

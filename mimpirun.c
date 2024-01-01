@@ -85,7 +85,7 @@ int main(int argc, char** argv) {
     int toChildren[n + 1][2][2];// [x][0][x] - for os to send
     int tree[n + 1][2];
     int toBuffer[n + 1][2];
-    char temp[10];
+    char temp[16];
     temp[9] = 0;
 
     if (argc != 4)
@@ -147,6 +147,9 @@ int main(int argc, char** argv) {
         fillWithZero(temp);
         sprintf(temp, "%d", toBuffer[pid][0]);
         setenv("MIMPI_from_buffer", temp, 1);
+
+        fillWithZero(temp);
+        setenv("MIMPI_world_size", argv[1], 1);
         
         ASSERT_SYS_OK(execvpe(argv[2], &(argv[2]), environ));
     }
