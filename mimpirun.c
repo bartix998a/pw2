@@ -85,13 +85,15 @@ int main(int argc, char** argv) {
     int pid = 0;
     int* toMIOS = (int*) malloc(2 * sizeof(int));// write to the second one
     int*** toChildren = (int***) malloc((n + 1) * sizeof(int**));// [x][0][x] - for os to send
-    int tree[n + 1][2];
-    int toBuffer[n + 1][2];
+    int** tree = (int**) malloc((n + 1) * sizeof(int*));
+    int** toBuffer = (int**) malloc((n + 1) * sizeof(int*));
     for (int i = 0; i < n + 1; i++)
     {
         toChildren[i] = (int***) malloc(2 * sizeof(int*));
         toChildren[i][0] = (int**) malloc(2 * sizeof(int));
         toChildren[i][1] = (int**) malloc(2 * sizeof(int));
+        tree[i] = malloc(2 * sizeof(int));
+        toBuffer[i] = malloc(2 * sizeof(int));
     }
     
     char temp[16];
@@ -176,11 +178,22 @@ int main(int argc, char** argv) {
         close(tree[i][1]);
         close(tree[i][0]);
     }
+
+    for (int i = 0; i < n + 1; i++)
+    {
+        free(toChildren[i][0]);
+        free(toChildren[i][1]);
+        free(toChildren[i]);
+        free(tree[i]);
+        free(toBuffer[i]);
+    }
+
     for (int i = 0; i < n; i++)
     {
         int temp = 0;
         wait(&temp);
     }
+    
     
     return 0;
 }
