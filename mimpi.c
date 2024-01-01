@@ -2,6 +2,8 @@
  * This file is for implementation of MIMPI library.
  * */
 
+#include <stdio.h>
+#include <string.h>
 #include <stdlib.h>
 #include <stdbool.h>
 #include <limits.h>
@@ -26,9 +28,9 @@ static int to_leftson;
 static int bufferChannel;
 static int world_size;
 
-buffer_t* push_back(buffer_t* list, buffer_t* element);
+//buffer_t* push_back(buffer_t* list, buffer_t* element);
 
-buffer_t* find_first(buffer_t* list, int count, int source, int tag);
+//buffer_t* find_first(buffer_t* list, int count, int source, int tag);
 
 static buffer_t* recieve_buffer;
 static int current_tag;
@@ -83,26 +85,26 @@ int MIMPI_World_rank() {
 }
 
 void recieve(){
-    while(!end) {
-        int request[3];
-        chrecv(bufferChannel, request, 3 * sizeof(int));// main przesyla
-        buffer_t* element = malloc(sizeof(buffer_t));
-        element->tag = request[2];
-        element->count = request[0];
-        element->buffor = malloc(request[0]);
-        element ->next = NULL;
-        for (int i = 0; i < element->count/PIPE_BUF + element->count % PIPE_BUF == 0 ? 0 : 1; i++) {
-            chrecv(bufferChannel, recieve_buffer + PIPE_BUF * i, element->count/PIPE_BUF == i ? element->count % 512 : PIPE_BUF);// samo sie zbuforuje (chyba)
-        }
-        // mutex lock
-        push_back(&recieve_buffer, element);
-        if (element->tag == current_tag /*czy jakos tak jeszcze czekajacy i */)
-        {
-            // obudz glowny watek
-        }
+    // while(!end) {
+    //     int request[3];
+    //     chrecv(bufferChannel, request, 3 * sizeof(int));// main przesyla
+    //     buffer_t* element = malloc(sizeof(buffer_t));
+    //     element->tag = request[2];
+    //     element->count = request[0];
+    //     element->buffor = malloc(request[0]);
+    //     element ->next = NULL;
+    //     for (int i = 0; i < element->count/PIPE_BUF + (element->count % PIPE_BUF == 0 ? 0 : 1); i++) {
+    //         chrecv(bufferChannel, recieve_buffer + PIPE_BUF * i, element->count/PIPE_BUF == i ? element->count % 512 : PIPE_BUF);// samo sie zbuforuje (chyba)
+    //     }
+    //     // mutex lock
+    //     push_back(recieve_buffer, element);
+    //     if (element->tag == current_tag /*czy jakos tak jeszcze czekajacy i */)
+    //     {
+    //         // obudz glowny watek
+    //     }
         
-        // mutex unlock and wake up other thread potenetially
-    }
+    //     // mutex unlock and wake up other thread potenetially
+    // }
 }
 
 MIMPI_Retcode MIMPI_Send(
@@ -111,19 +113,19 @@ MIMPI_Retcode MIMPI_Send(
     int destination,
     int tag
 ) {
-    int request[5] = {pid, MIMPI_SEND, count, destination, tag};
-    int dest_fd;
-    chsend(to_OS_public_fd, request, 5 * sizeof(int));
-    chrecv(from_OS_fd, &dest_fd, sizeof(int));
-    if (dest_fd != 0)
-    {
-        for (int i = 0; i < count/PIPE_BUF + count % PIPE_BUF == 0 ? 0 : 1; i++) {
-            chsend(dest_fd, data + PIPE_BUF * i, count/PIPE_BUF == i ? count%512 : PIPE_BUF);// samo sie zbuforuje (chyba)
-        }
-    } else {
-        return MIMPI_ERROR_REMOTE_FINISHED;
-    }
-    return MIMPI_SUCCESS;
+    // int request[5] = {pid, MIMPI_SEND, count, destination, tag};
+    // int dest_fd;
+    // chsend(to_OS_public_fd, request, 5 * sizeof(int));
+    // chrecv(from_OS_fd, &dest_fd, sizeof(int));
+    // if (dest_fd != 0)
+    // {
+    //     for (int i = 0; i < count/PIPE_BUF + (count % PIPE_BUF == 0 ? 0 : 1); i++) {
+    //         chsend(dest_fd, data + PIPE_BUF * i, count/PIPE_BUF == i ? count%512 : PIPE_BUF);// samo sie zbuforuje (chyba)
+    //     }
+    // } else {
+    //     return MIMPI_ERROR_REMOTE_FINISHED;
+    // }
+    // return MIMPI_SUCCESS;
     TODO
 }
 
@@ -133,25 +135,26 @@ MIMPI_Retcode MIMPI_Recv(
     int source,
     int tag
 ) {
-    int response;
-    mimpi_send_request(MIMPI_RECIEVE);
-    chrecv(from_OS_fd, &response, sizeof(int));
-    if (response == ERROR)
-    {
-        return MIMPI_ERROR_REMOTE_FINISHED;
-    }
+    // int response;
+    // mimpi_send_request(MIMPI_RECIEVE);
+    // chrecv(from_OS_fd, &response, sizeof(int));
+    // if (response == ERROR)
+    // {
+    //     return MIMPI_ERROR_REMOTE_FINISHED;
+    // }
     
-    // lock mutex
-    buffer_t* element = find_first(recieve_buffer, count, source, tag);
-    if (element == NULL){
-        current_tag = tag; 
-        // unlock mutex
-        // wait on mutex2
-    }
-    memcpy(data, element->buffor, element->count);
-    free(element->buffor);
-    free(element);
-    return MIMPI_SUCCESS;
+    // // lock mutex
+    // buffer_t* element = find_first(recieve_buffer, count, source, tag);
+    // if (element == NULL){
+    //     current_tag = tag; 
+    //     // unlock mutex
+    //     // wait on mutex2
+    // }
+    // memcpy(data, element->buffor, element->count);
+    // free(element->buffor);
+    // free(element);
+    // return MIMPI_SUCCESS;
+    TODO
 }
 
 MIMPI_Retcode MIMPI_Barrier() {

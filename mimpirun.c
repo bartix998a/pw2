@@ -11,6 +11,7 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <semaphore.h>
 #include "mimpi_common.h"
 #include "channel.h"
