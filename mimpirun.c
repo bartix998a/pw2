@@ -93,6 +93,7 @@ int main(int argc, char** argv) {
     int* toMIOS = (int*) malloc(2 * sizeof(int));// write to the second one
     int*** toChildren = (int***) malloc((n + 1) * sizeof(int**));// [x][0][x] - for os to send
     int** tree = (int**) malloc((n + 1) * sizeof(int*));
+    int** reverse_tree = (int**) malloc((n + 1) * sizeof(int*));
     int** toBuffer = (int**) malloc((n + 1) * sizeof(int*));
     for (int i = 0; i < n + 1; i++)
     {
@@ -100,6 +101,7 @@ int main(int argc, char** argv) {
         toChildren[i][0] = (int*) malloc(2 * sizeof(int));
         toChildren[i][1] = (int*) malloc(2 * sizeof(int));
         tree[i] = malloc(2 * sizeof(int));
+        reverse_tree[i] = malloc(2 * sizeof(int));
         toBuffer[i] = malloc(2 * sizeof(int));
         toBuffer[i][0] = 0;
         toBuffer[i][1] = 0;
@@ -157,12 +159,24 @@ int main(int argc, char** argv) {
         setenv("MIMPI_from_parent", temp, 1);
 
         fillWithZero(temp);
+        sprintf(temp, "%d", reverse_tree[pid / 2][1]);
+        setenv("MIMPI_to_parent", temp, 1);
+
+        fillWithZero(temp);
         sprintf(temp, "%d", 2 * pid <= n ? tree[2 * pid][1] : -1);
         setenv("MIMPI_to_left_son", temp, 1);
 
         fillWithZero(temp);
+        sprintf(temp, "%d", 2 * pid <= n ? reverse_tree[2 * pid][0] : -1);
+        setenv("MIMPI_from_left_son", temp, 1);
+
+        fillWithZero(temp);
         sprintf(temp, "%d", 2 * pid + 1 <= n ? tree[2 * pid + 1][1] : - 1);
         setenv("MIMPI_to_right_son", temp, 1);
+
+        fillWithZero(temp);
+        sprintf(temp, "%d", 2 * pid + 1 <= n ? reverse_tree[2 * pid + 1][0] : - 1);
+        setenv("MIMPI_from_right_son", temp, 1);
 
         fillWithZero(temp);
         sprintf(temp, "%d", toBuffer[pid][0]);
