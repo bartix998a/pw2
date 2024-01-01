@@ -261,6 +261,7 @@ MIMPI_Retcode MIMPI_Recv(
 
 MIMPI_Retcode MIMPI_Barrier()
 {
+
     char signal;
     if (2 * pid <= world_size)
     {
@@ -273,22 +274,26 @@ MIMPI_Retcode MIMPI_Barrier()
     {
         chrecv(from_rightson, &signal, 1);
     }
-    signal = MIMPI_BARIER;
-    chsend(to_parent_fd, &signal, 1);
-    chrecv(from_parent_fd, &signal, 1);
+
+    if (pid != 1)
+    {
+        signal = MIMPI_BARIER;
+        chsend(to_parent_fd, &signal, 1);
+        chrecv(from_parent_fd, &signal, 1);
+    }
+
     if (2 * pid <= world_size)
     {
         signal = MIMPI_BARIER;
         chsend(to_leftson, &signal, 1);
     }
-    /*
-    potentially you can check if you recieved signal for barrier
-    */
     if (2 * pid + 1 <= world_size)
     {
         signal = MIMPI_BARIER;
         chsend(to_rightson, &signal, 1);
     }
+
+    return MIMPI_SUCCESS;
 }
 
 MIMPI_Retcode MIMPI_Bcast(
