@@ -89,9 +89,9 @@ int main(int argc, char** argv) {
     int** toBuffer = (int**) malloc((n + 1) * sizeof(int*));
     for (int i = 0; i < n + 1; i++)
     {
-        toChildren[i] = (int***) malloc(2 * sizeof(int*));
-        toChildren[i][0] = (int**) malloc(2 * sizeof(int));
-        toChildren[i][1] = (int**) malloc(2 * sizeof(int));
+        toChildren[i] = (int**) malloc(2 * sizeof(int*));
+        toChildren[i][0] = (int*) malloc(2 * sizeof(int));
+        toChildren[i][1] = (int*) malloc(2 * sizeof(int));
         tree[i] = malloc(2 * sizeof(int));
         toBuffer[i] = malloc(2 * sizeof(int));
     }
