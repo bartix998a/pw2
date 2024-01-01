@@ -16,13 +16,18 @@
 #include "mimpi_common.h"
 #include "channel.h"
 
+
+#ifndef PIPE_BUF
+#define PIPE_BUF 4096
+#endif
+
+
 extern char **environ;
 
 void runMIMPIOS(int n, int*** toChlidren, int* toMIOS, int** tree, int** toBuffer){
     int request[2]; // request[0] - who sent it, request[1] - request proper
     int send_request[3];
     int response[10];
-    void* buffor = (void*) malloc(512);
     bool* initialized = (bool*) malloc(n * sizeof(bool));
     for (int i = 0; i < n; i++)
     {
@@ -45,13 +50,13 @@ void runMIMPIOS(int n, int*** toChlidren, int* toMIOS, int** tree, int** toBuffe
             break;
         case MIMPI_FINALIZE:
             initialized[request[0] - 1] = false;
-            initialized--;
+            init_count--;
             leftMIMPI++;
             if (leftMIMPI == n)
             {
+                printf("%p\n", initialized);
                 
                 free(initialized);
-                free(buffor);
                 return;
             }
             break;
@@ -96,6 +101,8 @@ int main(int argc, char** argv) {
         toChildren[i][1] = (int*) malloc(2 * sizeof(int));
         tree[i] = malloc(2 * sizeof(int));
         toBuffer[i] = malloc(2 * sizeof(int));
+        toBuffer[i][0] = 0;
+        toBuffer[i][1] = 0;
     }
     
     char temp[16];
@@ -190,6 +197,11 @@ int main(int argc, char** argv) {
         free(tree[i]);
         free(toBuffer[i]);
     }
+    free(tree);
+    free(toBuffer);
+    free(toChildren);
+    free(toMIOS);
+    printf("wait\n");
 
     for (int i = 0; i < n; i++)
     {
@@ -197,6 +209,6 @@ int main(int argc, char** argv) {
         wait(&temp);
     }
     
-    
+    printf("exit\n");
     return 0;
 }
