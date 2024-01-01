@@ -64,6 +64,7 @@ struct buffer {
     void* buffor;
     int count;
     int tag;
+    int source;
     struct buffor* next;
 };
 typedef struct buffer buffer_t;// TODO: skopiuj kod ze snake'a 
