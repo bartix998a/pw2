@@ -43,7 +43,8 @@ void mimpi_send_request(int request){
 
 void init_static_variables() {
     int result = 0;
-    sscanf(getenv("MIMPI_ID"), "%d", &result);
+    char* str = getenv("MIMPI_ID");
+    sscanf(str, "%d", &result);
     pid = result;
     sscanf(getenv("MIMPI_from_OS"), "%d", &result);
     from_OS_fd = result;
@@ -55,7 +56,7 @@ void init_static_variables() {
     from_parent_fd = result;
     sscanf(getenv("MIMPI_to_right_son"), "%d", &result);
     to_rightson = result;
-    sscanf(getenv("MIMPI_to_left_sin"), "%d", &result);
+    sscanf(getenv("MIMPI_to_left_son"), "%d", &result);
     to_leftson = result;
     sscanf(getenv("MIMPI_from_buffer"), "%d", &result);
     bufferChannel = result;
@@ -70,7 +71,6 @@ void MIMPI_Init(bool enable_deadlock_detection) {
 }
 
 void MIMPI_Finalize() {
-    TODO
     // send info to main thread and finish of reciever thread
     mimpi_send_request(MIMPI_FINALIZE);
     channels_finalize();

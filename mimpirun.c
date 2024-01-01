@@ -22,7 +22,7 @@ void runMIMPIOS(int n, int*** toChlidren, int* toMIOS, int** tree, int** toBuffe
     int request[2]; // request[0] - who sent it, request[1] - request proper
     int send_request[3];
     int response[10];
-    void* buffor = malloc(512);
+    void* buffor = (void*) malloc(512);
     bool* initialized = (bool*) malloc(n * sizeof(bool));
     for (int i = 0; i < n; i++)
     {
@@ -49,6 +49,7 @@ void runMIMPIOS(int n, int*** toChlidren, int* toMIOS, int** tree, int** toBuffe
             leftMIMPI++;
             if (leftMIMPI == n)
             {
+                
                 free(initialized);
                 free(buffor);
                 return;
@@ -100,7 +101,7 @@ int main(int argc, char** argv) {
     char temp[16];
     temp[9] = 0;
 
-    if (argc != 4)
+    if (argc < 3)
     {
         return 1;
     }
@@ -161,6 +162,7 @@ int main(int argc, char** argv) {
         setenv("MIMPI_from_buffer", temp, 1);
 
         fillWithZero(temp);
+        sprintf(temp, "%d", n);
         setenv("MIMPI_world_size", argv[1], 1);
         
         ASSERT_SYS_OK(execvpe(argv[2], &(argv[2]), environ));
