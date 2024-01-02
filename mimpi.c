@@ -114,6 +114,22 @@ void mimpi_send_request(int request)
     chsend(to_OS_public_fd, message, 2 * sizeof(int));
 }
 
+void generalized_send(int fd, void *data, int count)
+{
+    for (int i = 0; i < count / PIPE_BUF + (count % PIPE_BUF == 0 ? 0 : 1); i++)
+    {
+        chsend(fd, recieve_buffer + PIPE_BUF * i, count / PIPE_BUF == i ? count % PIPE_BUF : PIPE_BUF); // samo sie zbuforuje (chyba)
+    }
+}
+
+void generalized_recieve(int fd, void *data, int count)
+{
+    for (int i = 0; i < count / PIPE_BUF + (count % PIPE_BUF == 0 ? 0 : 1); i++)
+    {
+        chrecv(fd, recieve_buffer + PIPE_BUF * i, count / PIPE_BUF == i ? count % PIPE_BUF : PIPE_BUF); // samo sie zbuforuje (chyba)
+    }
+}
+
 void init_static_variables()
 {
     int result = 0;
@@ -162,10 +178,11 @@ void *recieve(void *arg)
         element->count = request[0];
         element->buffor = malloc(request[0]);
         element->next = NULL;
-        for (int i = 0; i < element->count / PIPE_BUF + (element->count % PIPE_BUF == 0 ? 0 : 1); i++)
-        {
-            chrecv(bufferChannel, recieve_buffer + PIPE_BUF * i, element->count / PIPE_BUF == i ? element->count % PIPE_BUF : PIPE_BUF); // samo sie zbuforuje (chyba)
-        }
+        // for (int i = 0; i < element->count / PIPE_BUF + (element->count % PIPE_BUF == 0 ? 0 : 1); i++)
+        // {
+        //     chrecv(bufferChannel, element->buffor + PIPE_BUF * i, element->count / PIPE_BUF == i ? element->count % PIPE_BUF : PIPE_BUF); // samo sie zbuforuje (chyba)
+        // }
+        generalized_recieve(bufferChannel, element->buffor, element->count);
         pthread_mutex_lock(buffer_protection);
         push_back(recieve_buffer, element);
         push_back(recieve_buffer, element);
@@ -255,10 +272,11 @@ MIMPI_Retcode MIMPI_Send(
     chrecv(from_OS_fd, &dest_fd, sizeof(int));
     if (dest_fd != 0)
     {
-        for (int i = 0; i < count / PIPE_BUF + (count % PIPE_BUF == 0 ? 0 : 1); i++)
-        {
-            chsend(dest_fd, data + PIPE_BUF * i, count / PIPE_BUF == i ? count % PIPE_BUF : PIPE_BUF); // samo sie zbuforuje (chyba)
-        }
+        // for (int i = 0; i < count / PIPE_BUF + (count % PIPE_BUF == 0 ? 0 : 1); i++)
+        // {
+        //     chsend(dest_fd, data + PIPE_BUF * i, count / PIPE_BUF == i ? count % PIPE_BUF : PIPE_BUF); // samo sie zbuforuje (chyba)
+        // }
+        generalized_send(dest_fd, data, count);
     }
     else
     {
@@ -298,7 +316,8 @@ MIMPI_Retcode MIMPI_Recv(
     return MIMPI_SUCCESS;
 }
 
-bool MIMPI_BCAST_neighbour_left(char signal, int signal_producer) {
+bool MIMPI_BCAST_neighbour_left(char signal, int signal_producer)
+{
     if (signal != MIMPI_LEFT)
     {
         return false;
@@ -325,7 +344,7 @@ MIMPI_Retcode MIMPI_Barrier()
     {
         return MIMPI_ERROR_REMOTE_FINISHED;
     }
-    
+
     char signal;
     if (2 * pid <= world_size)
     {
@@ -334,11 +353,7 @@ MIMPI_Retcode MIMPI_Barrier()
         {
             return MIMPI_ERROR_REMOTE_FINISHED;
         }
-        
     }
-    /*
-    potentially you can check if you recieved signal for barrier
-    */
     if (2 * pid + 1 <= world_size)
     {
         chrecv(from_rightson, &signal, 1);
@@ -376,9 +391,66 @@ MIMPI_Retcode MIMPI_Barrier()
 MIMPI_Retcode MIMPI_Bcast(
     void *data,
     int count,
-    int root){
-        GOOD_RANK_BCAST(root);
-    TODO}
+    int root)
+{
+    GOOD_RANK_BCAST(root);
+    char signal;
+    char send_signal = pid == root ? MIMPI_BCAST_GOOD : MIMPI_BCAST_BAD;
+
+    if (2 * pid <= world_size)
+    {
+        chrecv(from_leftson, &signal, 1);
+        if (MIMPI_BCAST_neighbour_left(signal, from_leftson))
+        {
+            return MIMPI_ERROR_REMOTE_FINISHED;
+        }
+        if (signal == MIMPI_BCAST_GOOD)
+        {
+            generalized_recieve(from_leftson, data, count);
+            send_signal = MIMPI_BCAST_GOOD;
+        }
+    }
+    if (2 * pid + 1 <= world_size)
+    {
+        chrecv(from_rightson, &signal, 1);
+        if (MIMPI_BCAST_neighbour_left(signal, from_rightson))
+        {
+            return MIMPI_ERROR_REMOTE_FINISHED;
+        }
+        if (signal == MIMPI_BCAST_GOOD)
+        {
+            generalized_recieve(from_rightson, data, count);
+            send_signal = MIMPI_BCAST_GOOD;
+        }
+    }
+
+    if (pid != 1)
+    {
+        chsend(to_parent_fd, &send_signal, 1);
+        if (send_signal == MIMPI_BCAST_GOOD)
+        {
+            generalized_send(to_parent_fd, data, count);
+        }
+
+        generalized_recieve(from_parent_fd, data, count);
+        if (MIMPI_BCAST_neighbour_left(signal, from_parent_fd))
+        {
+            return MIMPI_ERROR_REMOTE_FINISHED;
+        }
+    }
+
+    if (2 * pid <= world_size)
+    {
+        signal = MIMPI_BARIER;
+        generalized_send(to_leftson, data, count);
+    }
+    if (2 * pid + 1 <= world_size)
+    {
+        signal = MIMPI_BARIER;
+        generalized_send(to_rightson, data, count);
+    }
+    return MIMPI_SUCCESS;
+}
 
 MIMPI_Retcode MIMPI_Reduce(
     void const *send_data,
