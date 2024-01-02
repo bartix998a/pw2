@@ -52,6 +52,8 @@ void runMIMPIOS(int n, int*** toChlidren, int* toMIOS, int** tree, int** toBuffe
             initialized[request[0] - 1] = false;
             init_count--;
             leftMIMPI++;
+            int sigkill[3] = {0, 0, 0};
+            chsend(toChlidren[request[0]][0][1], sigkill, 3 * sizeof(int));
             if (leftMIMPI == n)
             {
                 printf("%p\n", initialized);
@@ -62,6 +64,10 @@ void runMIMPIOS(int n, int*** toChlidren, int* toMIOS, int** tree, int** toBuffe
             break;
         case MIMPI_SEND:
             chrecv(toMIOS[0], send_request, 3 * sizeof(int));
+            if (send_request[2] == 0) {
+                printf("blad nie wiem co robic");
+                exit(1);
+            }
             if (!initialized[send_request[1]])
             {
                 response[0] = 0;

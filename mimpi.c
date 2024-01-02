@@ -17,6 +17,16 @@
 #define PIPE_BUF 4096
 #endif
 
+#define GOOD_RANK(x)                          \
+    if (x == pid)                             \
+    {                                         \
+        return MIMPI_ERROR_ATTEMPTED_SELF_OP; \
+    }                                         \
+    else if (x < 1 || x > world_size)         \
+    {                                         \
+        return MIMPI_ERROR_NO_SUCH_RANK;      \
+    }
+
 static int pid;
 static int from_parent_fd;
 static int to_parent_fd;
@@ -127,10 +137,18 @@ void init_static_variables()
 
 void *recieve(void *arg)
 {
-    while (!end)
+    pthread_mutex_lock(buffer_protection);
+    while (true)
     {
+        pthread_mutex_unlock(buffer_protection);
         int request[3];
         chrecv(bufferChannel, request, 3 * sizeof(int)); // main przesyla
+
+        if (request[2] == 0)
+        {
+            break;
+        }
+        
         buffer_t *element = malloc(sizeof(buffer_t));
         element->tag = request[2];
         element->count = request[0];
@@ -155,6 +173,7 @@ void *recieve(void *arg)
         {
             pthread_mutex_unlock(buffer_protection);
         }
+        pthread_mutex_lock(buffer_protection);
     }
 }
 
@@ -174,6 +193,7 @@ void initialize_mutexes()
     buffer_protection = malloc(sizeof(pthread_mutex_t));
     pthread_mutex_init(buffer_protection, &at);
     pthread_mutex_init(await_correct_request, &at);
+    pthread_attr_destroy(&at);
 }
 
 void MIMPI_Init(bool enable_deadlock_detection)
@@ -190,8 +210,13 @@ void MIMPI_Init(bool enable_deadlock_detection)
 
 void MIMPI_Finalize()
 {
-    // send info to main thread and finish of reciever thread
     mimpi_send_request(MIMPI_FINALIZE);
+    void* ret;
+    pthread_join(&reciever, ret);
+    remove_all(recieve_buffer);
+    pthread_mutex_destroy(buffer_protection);
+    pthread_attr_destroy(await_correct_request);
+    // send info to main thread and finish of reciever thread
     channels_finalize();
 }
 
@@ -211,6 +236,7 @@ MIMPI_Retcode MIMPI_Send(
     int destination,
     int tag)
 {
+    GOOD_RANK(destination);
     int request[5] = {pid, MIMPI_SEND, count, destination, tag};
     int dest_fd;
     chsend(to_OS_public_fd, request, 5 * sizeof(int));
@@ -235,6 +261,7 @@ MIMPI_Retcode MIMPI_Recv(
     int source,
     int tag)
 {
+    GOOD_RANK(source);
     int response;
     mimpi_send_request(MIMPI_RECIEVE);
     chrecv(from_OS_fd, &response, sizeof(int));
