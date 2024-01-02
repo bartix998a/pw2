@@ -27,6 +27,12 @@
         return MIMPI_ERROR_NO_SUCH_RANK;      \
     }
 
+#define GOOD_RANK_BCAST(x)               \
+    if (x < 1 || x > world_size)         \
+    {                                    \
+        return MIMPI_ERROR_NO_SUCH_RANK; \
+    }
+
 static int pid;
 static int from_parent_fd;
 static int to_parent_fd;
@@ -46,7 +52,8 @@ static int request_count = -1;
 static int request_source = -1;
 static int request_tag = -1;
 static buffer_t *recieve_buffer;
-static bool end = false;
+static bool any_finished = false;
+static int from_OS_buffer;
 
 void push_back(buffer_t *list, buffer_t *element)
 {
@@ -133,6 +140,7 @@ void init_static_variables()
     to_parent_fd = atoi(getenv("MIMPI_to_parent"));
     from_rightson = atoi(getenv("MIMPI_from_right_son"));
     from_leftson = atoi(getenv("MIMPI_from_left_son"));
+    from_OS_buffer = atoi(getenv("MIMPI_from_OS_buffer"));
 }
 
 void *recieve(void *arg)
@@ -142,13 +150,13 @@ void *recieve(void *arg)
     {
         pthread_mutex_unlock(buffer_protection);
         int request[3];
-        chrecv(bufferChannel, request, 3 * sizeof(int)); // main przesyla
+        chrecv(from_OS_buffer, request, 3 * sizeof(int)); // main przesyla
 
         if (request[2] == 0)
         {
             break;
         }
-        
+
         buffer_t *element = malloc(sizeof(buffer_t));
         element->tag = request[2];
         element->count = request[0];
@@ -211,11 +219,15 @@ void MIMPI_Init(bool enable_deadlock_detection)
 void MIMPI_Finalize()
 {
     mimpi_send_request(MIMPI_FINALIZE);
-    void* ret;
+    void *ret;
+    char leftMPI = MIMPI_LEFT;
     pthread_join(&reciever, ret);
     remove_all(recieve_buffer);
     pthread_mutex_destroy(buffer_protection);
     pthread_attr_destroy(await_correct_request);
+    chsend(to_parent_fd, &leftMPI, sizeof(char));
+    chsend(to_leftson, &leftMPI, sizeof(char));
+    chsend(to_rightson, &leftMPI, sizeof(char));
     // send info to main thread and finish of reciever thread
     channels_finalize();
 }
@@ -286,13 +298,43 @@ MIMPI_Retcode MIMPI_Recv(
     return MIMPI_SUCCESS;
 }
 
+bool MIMPI_BCAST_neighbour_left(char signal, int signal_producer) {
+    if (signal != MIMPI_LEFT)
+    {
+        return false;
+    }
+    any_finished = true;
+    if (from_leftson != signal_producer)
+    {
+        chsend(to_leftson, &signal, sizeof(char));
+    }
+    if (from_rightson != signal_producer)
+    {
+        chsend(to_rightson, &signal, sizeof(char));
+    }
+    if (from_parent_fd != signal_producer)
+    {
+        chsend(to_parent_fd, &signal, sizeof(char));
+    }
+    return true;
+}
+
 MIMPI_Retcode MIMPI_Barrier()
 {
-
+    if (any_finished)
+    {
+        return MIMPI_ERROR_REMOTE_FINISHED;
+    }
+    
     char signal;
     if (2 * pid <= world_size)
     {
         chrecv(from_leftson, &signal, 1);
+        if (MIMPI_BCAST_neighbour_left(signal, from_leftson))
+        {
+            return MIMPI_ERROR_REMOTE_FINISHED;
+        }
+        
     }
     /*
     potentially you can check if you recieved signal for barrier
@@ -300,6 +342,10 @@ MIMPI_Retcode MIMPI_Barrier()
     if (2 * pid + 1 <= world_size)
     {
         chrecv(from_rightson, &signal, 1);
+        if (MIMPI_BCAST_neighbour_left(signal, from_rightson))
+        {
+            return MIMPI_ERROR_REMOTE_FINISHED;
+        }
     }
 
     if (pid != 1)
@@ -307,6 +353,10 @@ MIMPI_Retcode MIMPI_Barrier()
         signal = MIMPI_BARIER;
         chsend(to_parent_fd, &signal, 1);
         chrecv(from_parent_fd, &signal, 1);
+        if (MIMPI_BCAST_neighbour_left(signal, from_parent_fd))
+        {
+            return MIMPI_ERROR_REMOTE_FINISHED;
+        }
     }
 
     if (2 * pid <= world_size)
@@ -327,6 +377,7 @@ MIMPI_Retcode MIMPI_Bcast(
     void *data,
     int count,
     int root){
+        GOOD_RANK_BCAST(root);
     TODO}
 
 MIMPI_Retcode MIMPI_Reduce(
@@ -336,5 +387,6 @@ MIMPI_Retcode MIMPI_Reduce(
     MIMPI_Op op,
     int root)
 {
+    GOOD_RANK_BCAST(root);
     TODO
 }

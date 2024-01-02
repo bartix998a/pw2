@@ -24,7 +24,7 @@
 
 extern char **environ;
 
-void runMIMPIOS(int n, int*** toChlidren, int* toMIOS, int** tree, int** toBuffer){
+void runMIMPIOS(int n, int*** toChlidren, int* toMIOS, int** tree, int** toBuffer, int** request_to_buffer){
     int request[2]; // request[0] - who sent it, request[1] - request proper
     int send_request[3];
     int response[10];
@@ -75,7 +75,7 @@ void runMIMPIOS(int n, int*** toChlidren, int* toMIOS, int** tree, int** toBuffe
             } else {
                 response[0] = toBuffer[send_request[1]][1];
                 int destination = send_request[1];
-                chsend(toChlidren[destination][0][1], send_request, 3 * sizeof(int));
+                chsend(request_to_buffer[destination][1], send_request, 3 * sizeof(int));
                 chsend(toChlidren[request[0]][0][1], response, sizeof(int));
             }
         }        
@@ -101,7 +101,8 @@ int main(int argc, char** argv) {
     int** tree = (int**) malloc((n + 1) * sizeof(int*));
     int** reverse_tree = (int**) malloc((n + 1) * sizeof(int*));
     int** toBuffer = (int**) malloc((n + 1) * sizeof(int*));
-    for (int i = 0; i < n + 1; i++)
+    int** os_to_buffer = (int**) malloc((n + 1) * sizeof(int*));
+    for (int i = 0; i <= n + 1; i++)
     {
         toChildren[i] = (int**) malloc(2 * sizeof(int*));
         toChildren[i][0] = (int*) malloc(2 * sizeof(int));
@@ -111,6 +112,7 @@ int main(int argc, char** argv) {
         toBuffer[i] = malloc(2 * sizeof(int));
         toBuffer[i][0] = 0;
         toBuffer[i][1] = 0;
+        os_to_buffer[i] = malloc(2 * sizeof(int));
     }
     
     char temp[16];
@@ -121,18 +123,14 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    channels_init();
     channel(toMIOS);
-    channel(toChildren[n][0]);
-    channel(toChildren[n][1]);
-    channel(tree[n]);
-
-    for (size_t i = 0; pid == 0 && i < n; i++)
+    for (size_t i = 0; i <= n; i++)
     {
         channel(toChildren[i][0]);
         channel(toChildren[i][1]);
         channel(tree[i]);
         channel(toBuffer[i]);
+        channel(os_to_buffer[i]);
     }
     for (size_t i = 0; i < n && pid == 0; i++)
     {
@@ -192,11 +190,14 @@ int main(int argc, char** argv) {
         sprintf(temp, "%d", n);
         setenv("MIMPI_world_size", argv[1], 1);
         
+        fillWithZero(temp);
+        sprintf(temp, "%d", n);
+        setenv("MIMPI_from_OS_buffer", os_to_buffer[pid][0], 1);
         ASSERT_SYS_OK(execvpe(argv[2], &(argv[2]), environ));
     }
     
     // here is only one process with pid == 0
-    runMIMPIOS(n, toChildren, toMIOS, tree, toBuffer);
+    runMIMPIOS(n, toChildren, toMIOS, tree, toBuffer, os_to_buffer);
     close(toMIOS[0]);
     close(toMIOS[1]);
     for (int i = 0; i <= n; i++)
@@ -207,18 +208,24 @@ int main(int argc, char** argv) {
         close(toChildren[i][1][1]);
         close(tree[i][1]);
         close(tree[i][0]);
+        close(os_to_buffer[i][1]);
+        close(os_to_buffer[i][0]);
+        close(toBuffer[i][1]);
+        close(toBuffer[i][0]);
     }
 
-    for (int i = 0; i < n + 1; i++)
+    for (int i = 0; i <= n + 1; i++)
     {
         free(toChildren[i][0]);
         free(toChildren[i][1]);
         free(toChildren[i]);
         free(tree[i]);
         free(toBuffer[i]);
+        free(os_to_buffer[i]);
     }
     free(tree);
     free(toBuffer);
+    free(os_to_buffer);
     free(toChildren);
     free(toMIOS);
     printf("wait\n");
