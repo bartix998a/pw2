@@ -2,7 +2,7 @@
  * This file is for implementation of MIMPI library.
  * */
 #define _GNU_SOURCE
-//#define _UNIX03_THREADS
+// #define _UNIX03_THREADS
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -20,17 +20,17 @@
 #endif
 
 #define GOOD_RANK(x)                          \
-    if (x + 1 == pid)                             \
+    if (x + 1 == pid)                         \
     {                                         \
         return MIMPI_ERROR_ATTEMPTED_SELF_OP; \
     }                                         \
-    else if (x + 1 < 1 || x + 1 > world_size)         \
+    else if (x + 1 < 1 || x + 1 > world_size) \
     {                                         \
         return MIMPI_ERROR_NO_SUCH_RANK;      \
     }
 
 #define GOOD_RANK_BCAST(x)               \
-    if (x + 1 < 1 || x + 1 > world_size)         \
+    if (x + 1 < 1 || x + 1 > world_size) \
     {                                    \
         return MIMPI_ERROR_NO_SUCH_RANK; \
     }
@@ -57,67 +57,13 @@ static buffer_t *recieve_buffer;
 static bool any_finished = false;
 static int from_OS_buffer;
 
-void push_back(buffer_t *list, buffer_t *element)
-{
-    while (list->next != NULL)
-    {
-        list = list->next;
-    }
-    list->next = element;
-    element->next = NULL;
-}
-
-buffer_t *find_first(buffer_t *list, int count, int source, int tag)
-{
-    while (list->next != NULL)
-    {
-        buffer_t *prev = list;
-        list = list->next;
-        if ((tag == 0 ? true : (list->tag == tag)) && list->source == source)
-        {
-            prev->next = list->next;
-            return list;
-        }
-    }
-    return NULL;
-}
-
-void remove_element(buffer_t *list, buffer_t *element)
-{
-    while (list->next != NULL)
-    {
-        buffer_t *prev = list;
-        list = list->next;
-        if (list == element)
-        {
-            prev->next = list->next;
-            list = element->next;
-            element->next = NULL;
-            return;
-        }
-    }
-}
-
-void remove_all(buffer_t *list)
-{
-    buffer_t *prev = list;
-    while (list->next != NULL)
-    {
-        list = prev->next;
-        free(list->buffor);
-        prev->next = list->next;
-        free(list);
-    }
-    free(prev);
-}
-
 void mimpi_send_request(int request)
 {
     int message[2] = {pid, request};
     chsend(to_OS_public_fd, message, 2 * sizeof(int));
 }
 
-void generalized_send(int fd, const void* data, int count)
+void generalized_send(int fd, const void *data, int count)
 {
     for (int i = 0; i < count / PIPE_BUF + (count % PIPE_BUF == 0 ? 0 : 1); i++)
     {
@@ -228,7 +174,7 @@ void MIMPI_Init(bool enable_deadlock_detection)
     init_static_variables();
     initizlize_buffer();
     initialize_mutexes();
-    int* useless_shit = malloc(sizeof(int));
+    int *useless_shit = malloc(sizeof(int));
     *useless_shit = 1;
     pthread_attr_t a;
     ASSERT_ZERO(pthread_attr_init(&a));
@@ -241,9 +187,9 @@ void MIMPI_Finalize()
 {
     printf("finalizing\n");
     mimpi_send_request(MIMPI_FINALIZE);
-    int* ret = NULL;
+    int *ret = NULL;
     char leftMPI = MIMPI_LEFT;
-    pthread_join(reciever, (void**) &ret);
+    pthread_join(reciever, (void **)&ret);
     remove_all(recieve_buffer);
     pthread_mutex_destroy(buffer_protection);
     pthread_mutex_destroy(await_correct_request);
@@ -303,19 +249,19 @@ MIMPI_Retcode MIMPI_Recv(
     printf("recieving\n");
     GOOD_RANK(source);
     int response;
-    
+    int req[5] = {pid, MIMPI_RECIEVE, count, source, tag};
+
+    chsend(to_OS_public_fd, req, 5 * sizeof(int));
+    chrecv(from_OS_fd, &response, sizeof(int));
+    if (response == ERROR)
+    {
+        return MIMPI_ERROR_REMOTE_FINISHED;
+    }
+
     pthread_mutex_lock(buffer_protection);
     buffer_t *element = find_first(recieve_buffer, count, source, tag);
     if (element == NULL)
     {
-        mimpi_send_request(MIMPI_RECIEVE);
-        chsend(to_OS_public_fd, &source, sizeof(int));
-        chrecv(from_OS_fd, &response, sizeof(int));
-        if (response == ERROR)
-        {
-            return MIMPI_ERROR_REMOTE_FINISHED;
-        }
-
         request_tag = tag;
         request_count = count;
         request_source = source;
@@ -465,14 +411,17 @@ MIMPI_Retcode MIMPI_Bcast(
     return MIMPI_SUCCESS;
 }
 
-uint8_t operation(uint8_t first, uint8_t second, MIMPI_Op op){
+uint8_t operation(uint8_t first, uint8_t second, MIMPI_Op op)
+{
     switch (op)
     {
     case MIMPI_MAX:
         if (first > second)
         {
             return first;
-        } else {
+        }
+        else
+        {
             return second;
         }
         break;
@@ -480,7 +429,9 @@ uint8_t operation(uint8_t first, uint8_t second, MIMPI_Op op){
         if (first < second)
         {
             return first;
-        } else {
+        }
+        else
+        {
             return second;
         }
         break;
@@ -504,9 +455,9 @@ MIMPI_Retcode MIMPI_Reduce(
     GOOD_RANK_BCAST(root);
     char signal;
     char send_signal = pid == root ? MIMPI_BCAST_GOOD : MIMPI_BCAST_BAD;
-    uint8_t* left_recieve = NULL;
-    uint8_t* right_recieve = NULL;
-    uint8_t* send_buffer = malloc(count * sizeof(uint8_t));
+    uint8_t *left_recieve = NULL;
+    uint8_t *right_recieve = NULL;
+    uint8_t *send_buffer = malloc(count * sizeof(uint8_t));
     memcpy(send_buffer, send_data, count);
 
     if (2 * pid <= world_size)
@@ -550,7 +501,6 @@ MIMPI_Retcode MIMPI_Reduce(
             send_buffer[i] = operation(send_buffer[i], right_recieve[i], op);
         }
     }
-    
 
     if (pid != 1)
     {
@@ -587,6 +537,6 @@ MIMPI_Retcode MIMPI_Reduce(
         free(right_recieve);
     }
     free(send_buffer);
-    
+
     return MIMPI_SUCCESS;
 }

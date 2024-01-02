@@ -77,4 +77,58 @@ struct buffer {
 };
 typedef struct buffer buffer_t;// TODO: skopiuj kod ze snake'a 
 
+void push_back(buffer_t *list, buffer_t *element)
+{
+    while (list->next != NULL)
+    {
+        list = list->next;
+    }
+    list->next = element;
+    element->next = NULL;
+}
+
+buffer_t *find_first(buffer_t *list, int count, int source, int tag)
+{
+    while (list->next != NULL)
+    {
+        buffer_t *prev = list;
+        list = list->next;
+        if ((tag == 0 ? true : (list->tag == tag)) && list->source == source)
+        {
+            prev->next = list->next;
+            return list;
+        }
+    }
+    return NULL;
+}
+
+void remove_element(buffer_t *list, buffer_t *element)
+{
+    while (list->next != NULL)
+    {
+        buffer_t *prev = list;
+        list = list->next;
+        if (list == element)
+        {
+            prev->next = list->next;
+            list = element->next;
+            element->next = NULL;
+            return;
+        }
+    }
+}
+
+void remove_all(buffer_t *list)
+{
+    buffer_t *prev = list;
+    while (list->next != NULL)
+    {
+        list = prev->next;
+        free(list->buffor);
+        prev->next = list->next;
+        free(list);
+    }
+    free(prev);
+}
+
 #endif // MIMPI_COMMON_H
