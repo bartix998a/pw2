@@ -47,12 +47,12 @@ static int to_leftson;
 static int from_leftson;
 static int bufferChannel;
 static int world_size;
-static pthread_t reciever;
+pthread_t reciever;
 pthread_mutex_t *buffer_protection;
 pthread_mutex_t *await_correct_request;
-static int request_count = -1;
-static int request_source = -1;
-static int request_tag = -1;
+volatile int request_count = -2;
+volatile int request_source = -2;
+volatile int request_tag = -2;
 static buffer_t *recieve_buffer;
 static bool any_finished = false;
 static int from_OS_buffer;
@@ -89,8 +89,10 @@ void init_static_variables()
     from_OS_fd = result;
     sscanf(getenv("MIMPI_to_OS_public"), "%d", &result);
     to_OS_public_fd = result;
+    assert(to_OS_public_fd != -1);
     sscanf(getenv("MIMPI_to_OS_private"), "%d", &result);
     to_OS_private_fd = result;
+    assert(to_OS_private_fd != -1);
     sscanf(getenv("MIMPI_from_parent"), "%d", &result);
     from_parent_fd = result;
     sscanf(getenv("MIMPI_to_right_son"), "%d", &result);
@@ -99,8 +101,10 @@ void init_static_variables()
     to_leftson = result;
     sscanf(getenv("MIMPI_from_buffer"), "%d", &result);
     bufferChannel = result;
+    assert(bufferChannel != -1);
     world_size = atoi(getenv("MIMPI_world_size"));
     to_parent_fd = atoi(getenv("MIMPI_to_parent"));
+    assert(to_parent_fd != -1);
     from_rightson = atoi(getenv("MIMPI_from_right_son"));
     from_leftson = atoi(getenv("MIMPI_from_left_son"));
     from_OS_buffer = atoi(getenv("MIMPI_from_OS_buffer"));
@@ -108,12 +112,11 @@ void init_static_variables()
 
 void *recieve(void *arg)
 {
-    pthread_mutex_lock(buffer_protection);
     while (true)
     {
-        pthread_mutex_unlock(buffer_protection);
         int request[3];
         chrecv(from_OS_buffer, request, 3 * sizeof(int)); // main przesyla
+        printf("rec for %d %d %d\n", request_count, request_source, request_tag);
 
         if (request[2] == 0)
         {
@@ -122,6 +125,7 @@ void *recieve(void *arg)
 
         buffer_t *element = malloc(sizeof(buffer_t));
         element->tag = request[2];
+        element->source = request[1] - 1;
         element->count = request[0];
         element->buffor = malloc(request[0]);
         element->next = NULL;
@@ -130,22 +134,30 @@ void *recieve(void *arg)
         //     chrecv(bufferChannel, element->buffor + PIPE_BUF * i, element->count / PIPE_BUF == i ? element->count % PIPE_BUF : PIPE_BUF); // samo sie zbuforuje (chyba)
         // }
         generalized_recieve(bufferChannel, element->buffor, element->count);
+        printf("rec for %d %d %d\n", request_count, request_source, request_tag);
         pthread_mutex_lock(buffer_protection);
+        printf("main m lock\n");
         push_back(recieve_buffer, element);
-        push_back(recieve_buffer, element);
+        printf("element %d %d %d inserted\n", element->count, element->source, element->tag);
+        printf("list %d %d %d \n", recieve_buffer->count, recieve_buffer->source, recieve_buffer->tag);
+        printf("list %d %d %d %p \n", recieve_buffer->next->count, recieve_buffer->next->source, recieve_buffer->next->tag, recieve_buffer->next->next);
+        printf("request tag %d\n", request_tag);
         if (element->tag == request_tag && element->tag == request_tag && element->source == request_source)
-        {
+        {;
+            
             request_tag = -1;
             request_count = -1;
             request_source = -1;
             pthread_mutex_unlock(buffer_protection);
+            printf("main m unlock\n");
             pthread_mutex_unlock(await_correct_request);
+            printf("second unlock\n");
         }
         else
         {
             pthread_mutex_unlock(buffer_protection);
+            printf("main m unlock\n");
         }
-        pthread_mutex_lock(buffer_protection);
     }
     return NULL;
 }
@@ -176,11 +188,9 @@ void MIMPI_Init(bool enable_deadlock_detection)
     initialize_mutexes();
     int *useless_shit = malloc(sizeof(int));
     *useless_shit = 1;
-    pthread_attr_t a;
-    ASSERT_ZERO(pthread_attr_init(&a));
-    ASSERT_ZERO(pthread_attr_setdetachstate(&a, PTHREAD_CREATE_JOINABLE));
-    ASSERT_ZERO(pthread_create(&reciever, &a, recieve, useless_shit));
+    ASSERT_ZERO(pthread_create(&reciever, NULL, recieve, NULL));
     free(useless_shit);
+    pthread_mutex_lock(await_correct_request);
 }
 
 void MIMPI_Finalize()
@@ -190,7 +200,7 @@ void MIMPI_Finalize()
     int *ret = NULL;
     char leftMPI = MIMPI_LEFT;
     pthread_join(reciever, (void **)&ret);
-    remove_all(recieve_buffer);
+    //remove_all(recieve_buffer);
     pthread_mutex_destroy(buffer_protection);
     pthread_mutex_destroy(await_correct_request);
     free(buffer_protection);
@@ -257,21 +267,27 @@ MIMPI_Retcode MIMPI_Recv(
     {
         return MIMPI_ERROR_REMOTE_FINISHED;
     }
-
+    printf("OS agreed to recieve\n");
     pthread_mutex_lock(buffer_protection);
+    printf("main m lock\n");
     buffer_t *element = find_first(recieve_buffer, count, source, tag);
     if (element == NULL)
     {
+        printf("waiting for %d %d %d\n", count, source, tag);
         request_tag = tag;
         request_count = count;
         request_source = source;
+        printf("waiting for %d %d %d\n", request_count, request_source, request_tag);
         pthread_mutex_unlock(buffer_protection);
+        printf("main m unlock\n");
+        printf("second lock\n");
         pthread_mutex_lock(await_correct_request); // zly typ mutexa mamy problem
+        element = find_first(recieve_buffer, count, source, tag);
     }
+    printf("received %p %p", recieve_buffer, recieve_buffer->next);
     memcpy(data, element->buffor, element->count);
     free(element->buffor);
     free(element);
-    printf("recieved\n");
     return MIMPI_SUCCESS;
 }
 

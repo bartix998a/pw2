@@ -7,8 +7,16 @@
 #define MIMPI_COMMON_H
 
 #include <assert.h>
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
 #include <stdbool.h>
+#include <limits.h>
+#include <sys/mman.h>
+#include <pthread.h>
+#include <inttypes.h>
 #include <stdnoreturn.h>
+
 
 /*
     Assert that expression doesn't evaluate to -1 (as almost every system function does in case of error).
@@ -73,62 +81,17 @@ struct buffer {
     int count;
     int tag;
     int source;
-    struct buffor* next;
+    struct buffer* next;
 };
 typedef struct buffer buffer_t;// TODO: skopiuj kod ze snake'a 
 
-void push_back(buffer_t *list, buffer_t *element)
-{
-    while (list->next != NULL)
-    {
-        list = list->next;
-    }
-    list->next = element;
-    element->next = NULL;
-}
+void push_back(buffer_t *list, buffer_t *element);
 
-buffer_t *find_first(buffer_t *list, int count, int source, int tag)
-{
-    while (list->next != NULL)
-    {
-        buffer_t *prev = list;
-        list = list->next;
-        if ((tag == 0 ? true : (list->tag == tag)) && list->source == source)
-        {
-            prev->next = list->next;
-            return list;
-        }
-    }
-    return NULL;
-}
+buffer_t *find_first(buffer_t *list, int count, int source, int tag);
 
-void remove_element(buffer_t *list, buffer_t *element)
-{
-    while (list->next != NULL)
-    {
-        buffer_t *prev = list;
-        list = list->next;
-        if (list == element)
-        {
-            prev->next = list->next;
-            list = element->next;
-            element->next = NULL;
-            return;
-        }
-    }
-}
+void remove_element(buffer_t *list, buffer_t *element);
 
-void remove_all(buffer_t *list)
-{
-    buffer_t *prev = list;
-    while (list->next != NULL)
-    {
-        list = prev->next;
-        free(list->buffor);
-        prev->next = list->next;
-        free(list);
-    }
-    free(prev);
-}
+
+void remove_all(buffer_t *list);
 
 #endif // MIMPI_COMMON_H

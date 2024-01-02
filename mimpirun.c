@@ -48,7 +48,6 @@ void runMIMPIOS(int n, int ***toChlidren, int *toMIOS, int **tree, int **toBuffe
     while (true)
     {
         chrecv(toMIOS[0], request, 2 * sizeof(int));
-        printf("req: %d\n", request[1]);
         switch (request[1])
         {
         case WORLD_SIZE:
@@ -65,6 +64,7 @@ void runMIMPIOS(int n, int ***toChlidren, int *toMIOS, int **tree, int **toBuffe
             init_count--;
             leftMIMPI++;
             int sigkill[3] = {0, 0, 0};
+            assert(request_to_buffer[request[0]][1] != -1);
             chsend(request_to_buffer[request[0]][1], sigkill, 3 * sizeof(int));
             if (leftMIMPI == n)
             {
@@ -79,11 +79,9 @@ void runMIMPIOS(int n, int ***toChlidren, int *toMIOS, int **tree, int **toBuffe
             }
             break;
         case MIMPI_SEND:
-            printf("recieved send\n");
             chrecv(toMIOS[0], send_request, 3 * sizeof(int));
             if (send_request[2] == 0)
             {
-                printf("blad nie wiem co robic");
                 exit(1);
             }
             if (!not_left_mpi[send_request[1]])
@@ -103,14 +101,18 @@ void runMIMPIOS(int n, int ***toChlidren, int *toMIOS, int **tree, int **toBuffe
                 response[0] = toBuffer[send_request[1]][1];
                 int destination = send_request[1];
                 chsend(request_to_buffer[destination][1], send_request, 3 * sizeof(int));
-                chsend(toChlidren[request[0]][0][1], response, sizeof(int));
+                chsend(toChlidren[request[0]][0][1], &response[0], sizeof(int));
             }
+            printf("processed send\n");
             break;
         case MIMPI_RECIEVE:
             int recieve_request[3];
             int resp = ERROR;
             chrecv(toMIOS[0], recieve_request, 3 * sizeof(int));
-            if (find_first(buffers[request[0]], recieve_request[0], recieve_request[1], recieve_request[2]) != NULL || not_left_mpi[recieve_request[1]])
+            buffer_t* temp = find_first(buffers[request[0] - 1], recieve_request[0], recieve_request[1] + 1, recieve_request[2]);
+
+            
+            if (temp != NULL || not_left_mpi[recieve_request[1]])
             {
                 resp = 0;
             }
@@ -161,16 +163,16 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    channel(toMIOS);
+    ASSERT_SYS_OK(channel(toMIOS));
     printf("%d\n%d\n", toMIOS[0], toMIOS[1]);
     for (size_t i = 0; i <= n; i++)
     {
-        channel(toChildren[i][0]);
-        channel(toChildren[i][1]);
-        channel(tree[i]);
-        channel(reverse_tree[i]);
-        channel(toBuffer[i]);
-        channel(os_to_buffer[i]);
+        ASSERT_SYS_OK(channel(toChildren[i][0]));
+        ASSERT_SYS_OK(channel(toChildren[i][1]));
+        ASSERT_SYS_OK(channel(tree[i]));
+        ASSERT_SYS_OK(channel(reverse_tree[i]));
+        ASSERT_SYS_OK(channel(toBuffer[i]));
+        ASSERT_SYS_OK(channel(os_to_buffer[i]));
     }
     for (size_t i = 0; i < n && pid == 0; i++)
     {
