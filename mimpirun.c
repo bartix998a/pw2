@@ -53,11 +53,9 @@ void runMIMPIOS(int n, int*** toChlidren, int* toMIOS, int** tree, int** toBuffe
             init_count--;
             leftMIMPI++;
             int sigkill[3] = {0, 0, 0};
-            chsend(toChlidren[request[0]][0][1], sigkill, 3 * sizeof(int));
+            chsend(request_to_buffer[request[0]][1], sigkill, 3 * sizeof(int));
             if (leftMIMPI == n)
-            {
-                printf("%p\n", initialized);
-                
+            {                
                 free(initialized);
                 return;
             }
@@ -102,7 +100,7 @@ int main(int argc, char** argv) {
     int** reverse_tree = (int**) malloc((n + 1) * sizeof(int*));
     int** toBuffer = (int**) malloc((n + 1) * sizeof(int*));
     int** os_to_buffer = (int**) malloc((n + 1) * sizeof(int*));
-    for (int i = 0; i <= n + 1; i++)
+    for (int i = 0; i < n + 1; i++)
     {
         toChildren[i] = (int**) malloc(2 * sizeof(int*));
         toChildren[i][0] = (int*) malloc(2 * sizeof(int));
@@ -129,6 +127,7 @@ int main(int argc, char** argv) {
         channel(toChildren[i][0]);
         channel(toChildren[i][1]);
         channel(tree[i]);
+        channel(reverse_tree[i]);
         channel(toBuffer[i]);
         channel(os_to_buffer[i]);
     }
@@ -171,7 +170,7 @@ int main(int argc, char** argv) {
         setenv("MIMPI_to_left_son", temp, 1);
 
         fillWithZero(temp);
-        sprintf(temp, "%d", 2 * pid <= n ? reverse_tree[2 * pid][0] : -1);
+        sprintf(temp, "%d", ((2 * pid) <= n ? reverse_tree[2 * pid][0] : -1));
         setenv("MIMPI_from_left_son", temp, 1);
 
         fillWithZero(temp);
@@ -191,8 +190,8 @@ int main(int argc, char** argv) {
         setenv("MIMPI_world_size", argv[1], 1);
         
         fillWithZero(temp);
-        sprintf(temp, "%d", n);
-        setenv("MIMPI_from_OS_buffer", os_to_buffer[pid][0], 1);
+        sprintf(temp, "%d", os_to_buffer[pid][0]);
+        setenv("MIMPI_from_OS_buffer", temp, 1);
         ASSERT_SYS_OK(execvpe(argv[2], &(argv[2]), environ));
     }
     
@@ -212,18 +211,21 @@ int main(int argc, char** argv) {
         close(os_to_buffer[i][0]);
         close(toBuffer[i][1]);
         close(toBuffer[i][0]);
+        
     }
 
-    for (int i = 0; i <= n + 1; i++)
+    for (int i = 0; i < n + 1; i++)
     {
         free(toChildren[i][0]);
         free(toChildren[i][1]);
         free(toChildren[i]);
         free(tree[i]);
+        free(reverse_tree[i]);
         free(toBuffer[i]);
         free(os_to_buffer[i]);
     }
     free(tree);
+    free(reverse_tree);
     free(toBuffer);
     free(os_to_buffer);
     free(toChildren);

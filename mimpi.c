@@ -1,7 +1,8 @@
 /**
  * This file is for implementation of MIMPI library.
  * */
-
+#define _GNU_SOURCE
+//#define _UNIX03_THREADS
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -78,6 +79,7 @@ buffer_t *find_first(buffer_t *list, int count, int source, int tag)
             return list;
         }
     }
+    return NULL;
 }
 
 void remove_element(buffer_t *list, buffer_t *element)
@@ -115,7 +117,7 @@ void mimpi_send_request(int request)
     chsend(to_OS_public_fd, message, 2 * sizeof(int));
 }
 
-void generalized_send(int fd, void *data, int count)
+void generalized_send(int fd, const void* data, int count)
 {
     for (int i = 0; i < count / PIPE_BUF + (count % PIPE_BUF == 0 ? 0 : 1); i++)
     {
@@ -201,6 +203,7 @@ void *recieve(void *arg)
         }
         pthread_mutex_lock(buffer_protection);
     }
+    return NULL;
 }
 
 void initizlize_buffer()
@@ -214,12 +217,10 @@ void initizlize_buffer()
 
 void initialize_mutexes()
 {
-    pthread_mutexattr_t at;
-    pthread_mutexattr_init(&at);
     buffer_protection = malloc(sizeof(pthread_mutex_t));
-    pthread_mutex_init(buffer_protection, &at);
-    pthread_mutex_init(await_correct_request, &at);
-    pthread_attr_destroy(&at);
+    await_correct_request = malloc(sizeof(pthread_mutex_t));
+    pthread_mutex_init(buffer_protection, NULL);
+    pthread_mutex_init(await_correct_request, NULL);
 }
 
 void MIMPI_Init(bool enable_deadlock_detection)
@@ -227,22 +228,25 @@ void MIMPI_Init(bool enable_deadlock_detection)
     channels_init();
     init_static_variables();
     initizlize_buffer();
-
+    initialize_mutexes();
+    int* useless_shit = malloc(sizeof(int));
+    *useless_shit = 1;
     pthread_attr_t a;
     ASSERT_ZERO(pthread_attr_init(&a));
     ASSERT_ZERO(pthread_attr_setdetachstate(&a, PTHREAD_CREATE_JOINABLE));
-    pthread_create(&reciever, &a, recieve, NULL);
+    ASSERT_ZERO(pthread_create(&reciever, &a, recieve, useless_shit));
 }
 
 void MIMPI_Finalize()
 {
     mimpi_send_request(MIMPI_FINALIZE);
-    void *ret;
+    int* ret = malloc(sizeof(int));
     char leftMPI = MIMPI_LEFT;
-    pthread_join(&reciever, ret);
+    pthread_join(reciever, (void**) &ret);
+    free(ret);
     remove_all(recieve_buffer);
     pthread_mutex_destroy(buffer_protection);
-    pthread_attr_destroy(await_correct_request);
+    pthread_mutex_destroy(await_correct_request);
     chsend(to_parent_fd, &leftMPI, sizeof(char));
     chsend(to_leftson, &leftMPI, sizeof(char));
     chsend(to_rightson, &leftMPI, sizeof(char));
@@ -479,6 +483,7 @@ uint8_t operation(uint8_t first, uint8_t second, MIMPI_Op op){
         return first * second;
         break;
     }
+    return 0;
 }
 
 MIMPI_Retcode MIMPI_Reduce(
