@@ -58,6 +58,14 @@ _Noreturn extern void fatal(const char* fmt, ...);
 
 #define MIMPI_RECIEVE 4
 
+#define MIMPI_BARIER 5
+
+#define MIMPI_LEFT 6
+
+#define MIMPI_BCAST_GOOD 7
+
+#define MIMPI_BCAST_BAD 8
+
 #define ERROR 1
 
 struct buffer {
