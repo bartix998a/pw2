@@ -9,6 +9,7 @@
 #include <limits.h>
 #include <sys/mman.h>
 #include <pthread.h>
+#include <inttypes.h>
 #include "channel.h"
 #include "mimpi.h"
 #include "mimpi_common.h"
@@ -452,6 +453,34 @@ MIMPI_Retcode MIMPI_Bcast(
     return MIMPI_SUCCESS;
 }
 
+uint8_t operation(uint8_t first, uint8_t second, MIMPI_Op op){
+    switch (op)
+    {
+    case MIMPI_MAX:
+        if (first > second)
+        {
+            return first;
+        } else {
+            return second;
+        }
+        break;
+    case MIMPI_MIN:
+        if (first < second)
+        {
+            return first;
+        } else {
+            return second;
+        }
+        break;
+    case MIMPI_SUM:
+        return first + second;
+        break;
+    case MIMPI_PROD:
+        return first * second;
+        break;
+    }
+}
+
 MIMPI_Retcode MIMPI_Reduce(
     void const *send_data,
     void *recv_data,
@@ -460,5 +489,91 @@ MIMPI_Retcode MIMPI_Reduce(
     int root)
 {
     GOOD_RANK_BCAST(root);
-    TODO
+    char signal;
+    char send_signal = pid == root ? MIMPI_BCAST_GOOD : MIMPI_BCAST_BAD;
+    uint8_t* left_recieve = NULL;
+    uint8_t* right_recieve = NULL;
+    uint8_t* send_buffer = malloc(count * sizeof(uint8_t));
+    memcpy(send_buffer, send_data, count);
+
+    if (2 * pid <= world_size)
+    {
+        chrecv(from_leftson, &signal, 1);
+        if (MIMPI_BCAST_neighbour_left(signal, from_leftson))
+        {
+            return MIMPI_ERROR_REMOTE_FINISHED;
+        }
+        if (signal == MIMPI_BCAST_GOOD)
+        {
+            left_recieve = malloc(count * sizeof(uint8_t));
+            generalized_recieve(from_leftson, left_recieve, count);
+            send_signal = MIMPI_BCAST_GOOD;
+        }
+    }
+    if (2 * pid + 1 <= world_size)
+    {
+        chrecv(from_rightson, &signal, 1);
+        if (MIMPI_BCAST_neighbour_left(signal, from_rightson))
+        {
+            return MIMPI_ERROR_REMOTE_FINISHED;
+        }
+        if (signal == MIMPI_BCAST_GOOD)
+        {
+            right_recieve = malloc(count * sizeof(uint8_t));
+            generalized_recieve(from_rightson, right_recieve, count);
+            send_signal = MIMPI_BCAST_GOOD;
+        }
+    }
+
+    for (int i = 0; i < count; i++)
+    {
+        if (left_recieve != NULL)
+        {
+            send_buffer[i] = operation(send_buffer[i], left_recieve[i], op);
+        }
+
+        if (right_recieve != NULL)
+        {
+            send_buffer[i] = operation(send_buffer[i], right_recieve[i], op);
+        }
+    }
+    
+
+    if (pid != 1)
+    {
+        chsend(to_parent_fd, &send_signal, 1);
+        if (send_signal == MIMPI_BCAST_GOOD)
+        {
+            generalized_send(to_parent_fd, send_buffer, count);
+        }
+
+        generalized_recieve(from_parent_fd, pid == root ? recv_data : send_buffer, count);
+        if (MIMPI_BCAST_neighbour_left(signal, from_parent_fd))
+        {
+            return MIMPI_ERROR_REMOTE_FINISHED;
+        }
+    }
+
+    if (2 * pid <= world_size)
+    {
+        signal = MIMPI_BARIER;
+        generalized_send(to_leftson, send_buffer, count);
+    }
+    if (2 * pid + 1 <= world_size)
+    {
+        signal = MIMPI_BARIER;
+        generalized_send(to_rightson, send_buffer, count);
+    }
+
+    if (left_recieve != NULL)
+    {
+        free(left_recieve);
+    }
+    if (right_recieve != NULL)
+    {
+        free(right_recieve);
+    }
+    free(send_buffer);
+    
+    return MIMPI_SUCCESS;
 }
