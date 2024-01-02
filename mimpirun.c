@@ -28,16 +28,17 @@ void runMIMPIOS(int n, int*** toChlidren, int* toMIOS, int** tree, int** toBuffe
     int request[2]; // request[0] - who sent it, request[1] - request proper
     int send_request[3];
     int response[10];
-    bool* initialized = (bool*) malloc(n * sizeof(bool));
+    bool* not_left_mpi = (bool*) malloc(n * sizeof(bool));
     for (int i = 0; i < n; i++)
     {
-        initialized[i] = 0;
+        not_left_mpi[i] = true;
     }
     int leftMIMPI = 0;
     int init_count = 0;
     while (true)
     {
         chrecv(toMIOS[0], request, 2 * sizeof(int));
+        printf("req: %d\n", request[1]);
         switch (request[1])
         {
         case WORLD_SIZE:
@@ -45,28 +46,30 @@ void runMIMPIOS(int n, int*** toChlidren, int* toMIOS, int** tree, int** toBuffe
             chsend(toChlidren[request[0]][0][1], response, sizeof(int));
             break;
         case MIMPI_INIT:
-            initialized[request[0] - 1] = true;
+            not_left_mpi[request[0] - 1] = true;
             init_count++;
+            printf("initialized %d\n", request[0] - 1);
             break;
         case MIMPI_FINALIZE:
-            initialized[request[0] - 1] = false;
+            not_left_mpi[request[0] - 1] = false;
             init_count--;
             leftMIMPI++;
             int sigkill[3] = {0, 0, 0};
             chsend(request_to_buffer[request[0]][1], sigkill, 3 * sizeof(int));
             if (leftMIMPI == n)
             {                
-                free(initialized);
+                free(not_left_mpi);
                 return;
             }
             break;
         case MIMPI_SEND:
+            printf("recieved send\n");
             chrecv(toMIOS[0], send_request, 3 * sizeof(int));
             if (send_request[2] == 0) {
                 printf("blad nie wiem co robic");
                 exit(1);
             }
-            if (!initialized[send_request[1]])
+            if (!not_left_mpi[send_request[1]])
             {
                 response[0] = 0;
                 chsend(toChlidren[request[0]][0][1], response, sizeof(int));
@@ -76,6 +79,9 @@ void runMIMPIOS(int n, int*** toChlidren, int* toMIOS, int** tree, int** toBuffe
                 chsend(request_to_buffer[destination][1], send_request, 3 * sizeof(int));
                 chsend(toChlidren[request[0]][0][1], response, sizeof(int));
             }
+            break;
+        case MIMPI_RECIEVE:
+            int temp;
         }        
     }
     
@@ -122,6 +128,7 @@ int main(int argc, char** argv) {
     }
 
     channel(toMIOS);
+    printf("%d\n%d\n", toMIOS[0], toMIOS[1]);
     for (size_t i = 0; i <= n; i++)
     {
         channel(toChildren[i][0]);

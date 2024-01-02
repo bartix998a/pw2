@@ -20,17 +20,17 @@
 #endif
 
 #define GOOD_RANK(x)                          \
-    if (x == pid)                             \
+    if (x + 1 == pid)                             \
     {                                         \
         return MIMPI_ERROR_ATTEMPTED_SELF_OP; \
     }                                         \
-    else if (x < 1 || x > world_size)         \
+    else if (x + 1 < 1 || x + 1 > world_size)         \
     {                                         \
         return MIMPI_ERROR_NO_SUCH_RANK;      \
     }
 
 #define GOOD_RANK_BCAST(x)               \
-    if (x < 1 || x > world_size)         \
+    if (x + 1 < 1 || x + 1 > world_size)         \
     {                                    \
         return MIMPI_ERROR_NO_SUCH_RANK; \
     }
@@ -153,8 +153,6 @@ void init_static_variables()
     to_leftson = result;
     sscanf(getenv("MIMPI_from_buffer"), "%d", &result);
     bufferChannel = result;
-    recieve_buffer = malloc(sizeof(buffer_t));
-    recieve_buffer->tag = -1;
     world_size = atoi(getenv("MIMPI_world_size"));
     to_parent_fd = atoi(getenv("MIMPI_to_parent"));
     from_rightson = atoi(getenv("MIMPI_from_right_son"));
@@ -213,6 +211,7 @@ void initizlize_buffer()
     recieve_buffer->count = 0;
     recieve_buffer->buffor = NULL;
     recieve_buffer->source = -1;
+    recieve_buffer->next = NULL;
 }
 
 void initialize_mutexes()
@@ -235,18 +234,21 @@ void MIMPI_Init(bool enable_deadlock_detection)
     ASSERT_ZERO(pthread_attr_init(&a));
     ASSERT_ZERO(pthread_attr_setdetachstate(&a, PTHREAD_CREATE_JOINABLE));
     ASSERT_ZERO(pthread_create(&reciever, &a, recieve, useless_shit));
+    free(useless_shit);
 }
 
 void MIMPI_Finalize()
 {
+    printf("finalizing\n");
     mimpi_send_request(MIMPI_FINALIZE);
-    int* ret = malloc(sizeof(int));
+    int* ret = NULL;
     char leftMPI = MIMPI_LEFT;
     pthread_join(reciever, (void**) &ret);
-    free(ret);
     remove_all(recieve_buffer);
     pthread_mutex_destroy(buffer_protection);
     pthread_mutex_destroy(await_correct_request);
+    free(buffer_protection);
+    free(await_correct_request);
     chsend(to_parent_fd, &leftMPI, sizeof(char));
     chsend(to_leftson, &leftMPI, sizeof(char));
     chsend(to_rightson, &leftMPI, sizeof(char));
@@ -261,7 +263,7 @@ int MIMPI_World_size()
 
 int MIMPI_World_rank()
 {
-    return pid;
+    return pid - 1;
 }
 
 MIMPI_Retcode MIMPI_Send(
@@ -270,6 +272,7 @@ MIMPI_Retcode MIMPI_Send(
     int destination,
     int tag)
 {
+    printf("sending\n");
     GOOD_RANK(destination);
     int request[5] = {pid, MIMPI_SEND, count, destination, tag};
     int dest_fd;
@@ -287,6 +290,7 @@ MIMPI_Retcode MIMPI_Send(
     {
         return MIMPI_ERROR_REMOTE_FINISHED;
     }
+    printf("sent\n");
     return MIMPI_SUCCESS;
 }
 
@@ -296,19 +300,22 @@ MIMPI_Retcode MIMPI_Recv(
     int source,
     int tag)
 {
+    printf("recieving\n");
     GOOD_RANK(source);
     int response;
-    mimpi_send_request(MIMPI_RECIEVE);
-    chrecv(from_OS_fd, &response, sizeof(int));
-    if (response == ERROR)
-    {
-        return MIMPI_ERROR_REMOTE_FINISHED;
-    }
-
+    
     pthread_mutex_lock(buffer_protection);
     buffer_t *element = find_first(recieve_buffer, count, source, tag);
     if (element == NULL)
     {
+        mimpi_send_request(MIMPI_RECIEVE);
+        chsend(to_OS_public_fd, &source, sizeof(int));
+        chrecv(from_OS_fd, &response, sizeof(int));
+        if (response == ERROR)
+        {
+            return MIMPI_ERROR_REMOTE_FINISHED;
+        }
+
         request_tag = tag;
         request_count = count;
         request_source = source;
@@ -318,6 +325,7 @@ MIMPI_Retcode MIMPI_Recv(
     memcpy(data, element->buffor, element->count);
     free(element->buffor);
     free(element);
+    printf("recieved\n");
     return MIMPI_SUCCESS;
 }
 
