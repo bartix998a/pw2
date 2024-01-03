@@ -91,7 +91,12 @@ void remove_all(buffer_t *list)
     while (list->next != NULL)
     {
         list = prev->next;
-        free(list->buffor);
+        
+        if (list->buffor != NULL)
+        {
+            free(list->buffor);
+        }
+        
         prev->next = list->next;
         free(list);
     }

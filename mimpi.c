@@ -20,11 +20,11 @@
 #endif
 
 #define GOOD_RANK(x)                          \
-    if (x + 1 == pid)                         \
+    if (x == pid)                         \
     {                                         \
         return MIMPI_ERROR_ATTEMPTED_SELF_OP; \
     }                                         \
-    else if (x + 1 < 1 || x + 1 > world_size) \
+    else if (x < 0 || x >= world_size) \
     {                                         \
         return MIMPI_ERROR_NO_SUCH_RANK;      \
     }
@@ -67,7 +67,7 @@ void generalized_send(int fd, const void *data, int count)
 {
     for (int i = 0; i < count / PIPE_BUF + (count % PIPE_BUF == 0 ? 0 : 1); i++)
     {
-        chsend(fd, recieve_buffer + PIPE_BUF * i, count / PIPE_BUF == i ? count % PIPE_BUF : PIPE_BUF); // samo sie zbuforuje (chyba)
+        chsend(fd, data + PIPE_BUF * i, count / PIPE_BUF == i ? count % PIPE_BUF : PIPE_BUF); // samo sie zbuforuje (chyba)
     }
 }
 
@@ -75,7 +75,7 @@ void generalized_recieve(int fd, void *data, int count)
 {
     for (int i = 0; i < count / PIPE_BUF + (count % PIPE_BUF == 0 ? 0 : 1); i++)
     {
-        chrecv(fd, recieve_buffer + PIPE_BUF * i, count / PIPE_BUF == i ? count % PIPE_BUF : PIPE_BUF); // samo sie zbuforuje (chyba)
+        chrecv(fd, data + PIPE_BUF * i, count / PIPE_BUF == i ? count % PIPE_BUF : PIPE_BUF); // samo sie zbuforuje (chyba)
     }
 }
 
@@ -116,7 +116,7 @@ void *recieve(void *arg)
     {
         int request[3];
         chrecv(from_OS_buffer, request, 3 * sizeof(int)); // main przesyla
-        printf("rec for %d %d %d %d\n", pid, request_count, request_source, request_tag);
+        printf("rec request %d %d %d %d\n", pid, request[0], request[1], request[2]);
 
         if (request[2] == 0)
         {
@@ -125,7 +125,7 @@ void *recieve(void *arg)
 
         buffer_t *element = malloc(sizeof(buffer_t));
         element->tag = request[2];
-        element->source = request[1] - 1;
+        element->source = request[1];
         element->count = request[0];
         element->buffor = malloc(request[0]);
         element->next = NULL;
@@ -134,15 +134,11 @@ void *recieve(void *arg)
         //     chrecv(bufferChannel, element->buffor + PIPE_BUF * i, element->count / PIPE_BUF == i ? element->count % PIPE_BUF : PIPE_BUF); // samo sie zbuforuje (chyba)
         // }
         generalized_recieve(bufferChannel, element->buffor, element->count);
-        printf("rec for %d %d %d\n", request_count, request_source, request_tag);
         pthread_mutex_lock(buffer_protection);
         printf("main m lock\n");
         push_back(recieve_buffer, element);
-        printf("element %d %d %d inserted\n", element->count, element->source, element->tag);
-        printf("list %d %d %d \n", recieve_buffer->count, recieve_buffer->source, recieve_buffer->tag);
-        printf("list %d %d %d %p \n", recieve_buffer->next->count, recieve_buffer->next->source, recieve_buffer->next->tag, recieve_buffer->next->next);
-        printf("request tag %d\n", request_tag);
-        if (element->tag == request_tag && element->tag == request_tag && element->source == request_source)
+
+        if (element->tag == request_tag && element->count == request_count && element->source == request_source)
         {;
             
             request_tag = -1;
@@ -159,6 +155,7 @@ void *recieve(void *arg)
             printf("main m unlock\n");
         }
     }
+    printf("thread 2 of process %d killed\n", pid);
     return NULL;
 }
 
@@ -200,7 +197,7 @@ void MIMPI_Finalize()
     int *ret = NULL;
     char leftMPI = MIMPI_LEFT;
     pthread_join(reciever, (void **)&ret);
-    //remove_all(recieve_buffer);
+    remove_all(recieve_buffer);
     pthread_mutex_destroy(buffer_protection);
     pthread_mutex_destroy(await_correct_request);
     free(buffer_protection);
@@ -283,7 +280,6 @@ MIMPI_Retcode MIMPI_Recv(
         pthread_mutex_lock(await_correct_request); // zly typ mutexa mamy problem
         element = find_first(recieve_buffer, count, source, tag);
     }
-    printf("received %p %p", recieve_buffer, recieve_buffer->next);
     memcpy(data, element->buffor, element->count);
     free(element->buffor);
     free(element);

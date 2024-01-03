@@ -96,6 +96,7 @@ void runMIMPIOS(int n, int ***toChlidren, int *toMIOS, int **tree, int **toBuffe
                 push_back(buffers[send_request[1]], element);
                 response[0] = toBuffer[send_request[1]][1];
                 int destination = send_request[1];
+                send_request[1] = request[0];
                 chsend(request_to_buffer[destination][1], send_request, 3 * sizeof(int));
                 chsend(toChlidren[request[0]][0][1], &response[0], sizeof(int));
             }
@@ -105,13 +106,18 @@ void runMIMPIOS(int n, int ***toChlidren, int *toMIOS, int **tree, int **toBuffe
             int recieve_request[3];
             int resp = ERROR;
             chrecv(toMIOS[0], recieve_request, 3 * sizeof(int));
-            buffer_t* temp = find_first(buffers[request[0] - 1], recieve_request[0], recieve_request[1], recieve_request[2]);
+            buffer_t* temp = find_first(buffers[request[0]], recieve_request[0], recieve_request[1], recieve_request[2]);
 
             
             if (temp != NULL || not_left_mpi[recieve_request[1]])
             {
                 resp = 0;
             }
+            if (temp != NULL)
+            {
+                free(temp);
+            }
+            
             chsend(toChlidren[request[0]][0][1], &resp, sizeof(int));
             break;
         }
@@ -175,12 +181,13 @@ int main(int argc, char **argv)
         pid = fork();
         if (pid != 0)
         {
-            pid = i;
+            pid = i + 1;
         }
     }
 
     if (pid != 0)
     {
+        pid--;
         sprintf(temp, "%d", toMIOS[1]);
         setenv("MIMPI_to_OS_public", temp, 1);
 
@@ -205,19 +212,19 @@ int main(int argc, char **argv)
         setenv("MIMPI_to_parent", temp, 1);
 
         fillWithZero(temp);
-        sprintf(temp, "%d", 2 * pid <= n ? tree[2 * (pid + 1)][1] : -1);
+        sprintf(temp, "%d", (2 * (pid + 1))  <= n ? tree[2 * (pid + 1)][1] : -1);
         setenv("MIMPI_to_left_son", temp, 1);
 
         fillWithZero(temp);
-        sprintf(temp, "%d", ((2 * pid) <= n ? reverse_tree[2 * (pid + 1)][0] : -1));
+        sprintf(temp, "%d", ((2 * (pid + 1)) <= n ? reverse_tree[2 * (pid + 1)][0] : -1));
         setenv("MIMPI_from_left_son", temp, 1);
 
         fillWithZero(temp);
-        sprintf(temp, "%d", 2 * pid + 1 <= n ? tree[2 * (pid + 1) + 1][1] : -1);
+        sprintf(temp, "%d", (2 * (pid + 1) + 1) <= n ? tree[(2 * (pid + 1) + 1)][1] : -1);
         setenv("MIMPI_to_right_son", temp, 1);
 
         fillWithZero(temp);
-        sprintf(temp, "%d", 2 * pid + 1 <= n ? reverse_tree[2 * (pid + 1) + 1][0] : -1);
+        sprintf(temp, "%d", (2 * (pid + 1) + 1) <= n ? reverse_tree[2 * (pid + 1) + 1][0] : -1);
         setenv("MIMPI_from_right_son", temp, 1);
 
         fillWithZero(temp);
