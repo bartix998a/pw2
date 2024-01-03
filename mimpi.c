@@ -15,9 +15,7 @@
 #include "mimpi.h"
 #include "mimpi_common.h"
 
-#ifndef PIPE_BUF
-#define PIPE_BUF 4096
-#endif
+#define ATOMIC_SIZE 512
 
 #define GOOD_RANK(x)                          \
     if (x == pid)                         \
@@ -65,17 +63,17 @@ void mimpi_send_request(int request)
 
 void generalized_send(int fd, const void *data, int count)
 {
-    for (int i = 0; i < count / PIPE_BUF + (count % PIPE_BUF == 0 ? 0 : 1); i++)
+    for (int i = 0; i < count / ATOMIC_SIZE + (count % ATOMIC_SIZE == 0 ? 0 : 1); i++)
     {
-        chsend(fd, data + PIPE_BUF * i, count / PIPE_BUF == i ? count % PIPE_BUF : PIPE_BUF); // samo sie zbuforuje (chyba)
+        chsend(fd, data + ATOMIC_SIZE * i, count / ATOMIC_SIZE == i ? count % ATOMIC_SIZE : ATOMIC_SIZE); // samo sie zbuforuje (chyba)
     }
 }
 
 void generalized_recieve(int fd, void *data, int count)
 {
-    for (int i = 0; i < count / PIPE_BUF + (count % PIPE_BUF == 0 ? 0 : 1); i++)
+    for (int i = 0; i < count / ATOMIC_SIZE + (count % ATOMIC_SIZE == 0 ? 0 : 1); i++)
     {
-        chrecv(fd, data + PIPE_BUF * i, count / PIPE_BUF == i ? count % PIPE_BUF : PIPE_BUF); // samo sie zbuforuje (chyba)
+        chrecv(fd, data + ATOMIC_SIZE * i, count / ATOMIC_SIZE == i ? count % ATOMIC_SIZE : ATOMIC_SIZE); // samo sie zbuforuje (chyba)
     }
 }
 
@@ -116,8 +114,6 @@ void *recieve(void *arg)
     {
         int request[3];
         chrecv(from_OS_buffer, request, 3 * sizeof(int)); // main przesyla
-        printf("rec request %d %d %d %d\n", pid, request[0], request[1], request[2]);
-
         if (request[2] == 0)
         {
             break;
@@ -129,13 +125,8 @@ void *recieve(void *arg)
         element->count = request[0];
         element->buffor = malloc(request[0]);
         element->next = NULL;
-        // for (int i = 0; i < element->count / PIPE_BUF + (element->count % PIPE_BUF == 0 ? 0 : 1); i++)
-        // {
-        //     chrecv(bufferChannel, element->buffor + PIPE_BUF * i, element->count / PIPE_BUF == i ? element->count % PIPE_BUF : PIPE_BUF); // samo sie zbuforuje (chyba)
-        // }
         generalized_recieve(bufferChannel, element->buffor, element->count);
         pthread_mutex_lock(buffer_protection);
-        printf("main m lock\n");
         push_back(recieve_buffer, element);
 
         if (element->tag == request_tag && element->count == request_count && element->source == request_source)
@@ -145,17 +136,13 @@ void *recieve(void *arg)
             request_count = -1;
             request_source = -1;
             pthread_mutex_unlock(buffer_protection);
-            printf("main m unlock\n");
             pthread_mutex_unlock(await_correct_request);
-            printf("second unlock\n");
         }
         else
         {
             pthread_mutex_unlock(buffer_protection);
-            printf("main m unlock\n");
         }
     }
-    printf("thread 2 of process %d killed\n", pid);
     return NULL;
 }
 
@@ -192,7 +179,6 @@ void MIMPI_Init(bool enable_deadlock_detection)
 
 void MIMPI_Finalize()
 {
-    printf("finalizing\n");
     mimpi_send_request(MIMPI_FINALIZE);
     int *ret = NULL;
     char leftMPI = MIMPI_LEFT;
@@ -225,7 +211,6 @@ MIMPI_Retcode MIMPI_Send(
     int destination,
     int tag)
 {
-    printf("sending\n");
     GOOD_RANK(destination);
     int request[5] = {pid, MIMPI_SEND, count, destination, tag};
     int dest_fd;
@@ -243,7 +228,6 @@ MIMPI_Retcode MIMPI_Send(
     {
         return MIMPI_ERROR_REMOTE_FINISHED;
     }
-    printf("sent\n");
     return MIMPI_SUCCESS;
 }
 
@@ -253,7 +237,6 @@ MIMPI_Retcode MIMPI_Recv(
     int source,
     int tag)
 {
-    printf("recieving\n");
     GOOD_RANK(source);
     int response;
     int req[5] = {pid, MIMPI_RECIEVE, count, source, tag};
@@ -264,19 +247,14 @@ MIMPI_Retcode MIMPI_Recv(
     {
         return MIMPI_ERROR_REMOTE_FINISHED;
     }
-    printf("OS agreed to recieve\n");
     pthread_mutex_lock(buffer_protection);
-    printf("main m lock\n");
     buffer_t *element = find_first(recieve_buffer, count, source, tag);
     if (element == NULL)
     {
         request_tag = tag;
         request_count = count;
         request_source = source;
-        printf("waiting for %d %d %d %d\n", pid, request_count, request_source, request_tag);
         pthread_mutex_unlock(buffer_protection);
-        printf("main m unlock\n");
-        printf("second lock\n");
         pthread_mutex_lock(await_correct_request); // zly typ mutexa mamy problem
         element = find_first(recieve_buffer, count, source, tag);
     }

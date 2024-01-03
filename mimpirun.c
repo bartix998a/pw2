@@ -17,7 +17,7 @@
 #include "channel.h"
 
 #ifndef PIPE_BUF
-#define PIPE_BUF 4096
+#define PIPE_BUF 512
 #endif
 
 extern char **environ;
@@ -57,7 +57,6 @@ void runMIMPIOS(int n, int ***toChlidren, int *toMIOS, int **tree, int **toBuffe
         case MIMPI_INIT:
             not_left_mpi[request[0]] = true;
             init_count++;
-            printf("initialized %d\n", request[0] - 1);
             break;
         case MIMPI_FINALIZE:
             not_left_mpi[request[0]] = false;
@@ -100,7 +99,6 @@ void runMIMPIOS(int n, int ***toChlidren, int *toMIOS, int **tree, int **toBuffe
                 chsend(request_to_buffer[destination][1], send_request, 3 * sizeof(int));
                 chsend(toChlidren[request[0]][0][1], &response[0], sizeof(int));
             }
-            printf("processed send\n");
             break;
         case MIMPI_RECIEVE:
             int recieve_request[3];
@@ -144,6 +142,7 @@ int main(int argc, char **argv)
     int **reverse_tree = (int **)malloc((n + 1) * sizeof(int *));
     int **toBuffer = (int **)malloc((n + 1) * sizeof(int *));
     int **os_to_buffer = (int **)malloc((n + 1) * sizeof(int *));
+    channels_init();
     for (int i = 0; i < n + 1; i++)
     {
         toChildren[i] = (int **)malloc(2 * sizeof(int *));
@@ -166,7 +165,6 @@ int main(int argc, char **argv)
     }
 
     ASSERT_SYS_OK(channel(toMIOS));
-    printf("%d\n%d\n", toMIOS[0], toMIOS[1]);
     for (size_t i = 0; i <= n; i++)
     {
         ASSERT_SYS_OK(channel(toChildren[i][0]));
@@ -243,6 +241,7 @@ int main(int argc, char **argv)
 
     // here is only one process with pid == 0
     runMIMPIOS(n, toChildren, toMIOS, tree, toBuffer, os_to_buffer);
+    
     close(toMIOS[0]);
     close(toMIOS[1]);
     for (int i = 0; i <= n; i++)
@@ -253,6 +252,8 @@ int main(int argc, char **argv)
         close(toChildren[i][1][1]);
         close(tree[i][1]);
         close(tree[i][0]);
+        close(reverse_tree[i][1]);
+        close(reverse_tree[i][0]);
         close(os_to_buffer[i][1]);
         close(os_to_buffer[i][0]);
         close(toBuffer[i][1]);
@@ -275,6 +276,7 @@ int main(int argc, char **argv)
     free(os_to_buffer);
     free(toChildren);
     free(toMIOS);
+    channels_finalize();
     printf("wait\n");
 
     for (int i = 0; i < n; i++)
