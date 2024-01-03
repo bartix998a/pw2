@@ -116,7 +116,7 @@ void *recieve(void *arg)
     {
         int request[3];
         chrecv(from_OS_buffer, request, 3 * sizeof(int)); // main przesyla
-        printf("rec for %d %d %d\n", request_count, request_source, request_tag);
+        printf("rec for %d %d %d %d\n", pid, request_count, request_source, request_tag);
 
         if (request[2] == 0)
         {
@@ -219,7 +219,7 @@ int MIMPI_World_size()
 
 int MIMPI_World_rank()
 {
-    return pid - 1;
+    return pid;
 }
 
 MIMPI_Retcode MIMPI_Send(
@@ -273,11 +273,10 @@ MIMPI_Retcode MIMPI_Recv(
     buffer_t *element = find_first(recieve_buffer, count, source, tag);
     if (element == NULL)
     {
-        printf("waiting for %d %d %d\n", count, source, tag);
         request_tag = tag;
         request_count = count;
         request_source = source;
-        printf("waiting for %d %d %d\n", request_count, request_source, request_tag);
+        printf("waiting for %d %d %d %d\n", pid, request_count, request_source, request_tag);
         pthread_mutex_unlock(buffer_protection);
         printf("main m unlock\n");
         printf("second lock\n");
