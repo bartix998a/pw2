@@ -79,10 +79,10 @@ void runMIMPIOS(int n, int ***toChlidren, int *toMIOS, int **tree, int **toBuffe
                     //printf("%d waiting for %d\n", i, waiting[i][1]);
                     int left_MIMPI_sig[3] = {-1, -1, -1};
                     chsend(request_to_buffer[i][1], left_MIMPI_sig, 3 * sizeof(int));
+                    waiting[i][0] = -1;
+                    waiting[i][1] = -1;
+                    waiting[i][2] = -1;
                 }
-                waiting[i][0] = -1;
-                waiting[i][1] = -1;
-                waiting[i][2] = -1;
             }
             
             if (leftMIMPI == n)
@@ -90,8 +90,9 @@ void runMIMPIOS(int n, int ***toChlidren, int *toMIOS, int **tree, int **toBuffe
                 for (size_t i = 0; i < n; i++)
                 {
                     remove_all(buffers[i]);
+                    free(waiting[i]);
                 }
-
+                free(waiting);
                 free(buffers);
                 free(not_left_mpi);
                 return;
@@ -228,11 +229,11 @@ int main(int argc, char **argv)
         setenv("MIMPI_ID", temp, 1);
 
         fillWithZero(temp);
-        sprintf(temp, "%d", tree[(pid + 1) / 2][0]);
+        sprintf(temp, "%d", tree[pid + 1][0]);
         setenv("MIMPI_from_parent", temp, 1);
 
         fillWithZero(temp);
-        sprintf(temp, "%d", reverse_tree[(pid + 1) / 2][1]);
+        sprintf(temp, "%d", reverse_tree[pid + 1][1]);
         setenv("MIMPI_to_parent", temp, 1);
 
         fillWithZero(temp);
