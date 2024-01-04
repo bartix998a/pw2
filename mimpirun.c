@@ -5,6 +5,7 @@
 #define _GNU_SOURCE
 #include <stdio.h>
 #include <stdint.h>
+#include <string.h>
 #include <stdbool.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -27,6 +28,7 @@ void runMIMPIOS(int n, int ***toChlidren, int *toMIOS, int **tree, int **toBuffe
     int request[2]; // request[0] - who sent it, request[1] - request proper
     int send_request[3];
     int response[10];
+    int** waiting = malloc(n * sizeof(int*));
     bool *not_left_mpi = (bool *)malloc(n * sizeof(bool));
     buffer_t **buffers = malloc(n * sizeof(buffer_t *));
     for (size_t i = 0; i < n; i++)
@@ -37,6 +39,10 @@ void runMIMPIOS(int n, int ***toChlidren, int *toMIOS, int **tree, int **toBuffe
         buffers[i]->tag = -1;
         buffers[i]->next = NULL;
         buffers[i]->buffor = NULL;
+        waiting[i] = malloc(3 * sizeof(int));
+        waiting[i][0] = -1;
+        waiting[i][1] = -1;
+        waiting[i][2] = -1;
     }
 
     for (int i = 0; i < n; i++)
@@ -48,6 +54,7 @@ void runMIMPIOS(int n, int ***toChlidren, int *toMIOS, int **tree, int **toBuffe
     while (true)
     {
         chrecv(toMIOS[0], request, 2 * sizeof(int));
+        printf("req %d %d\n", request[0], request[1]);
         switch (request[1])
         {
         case WORLD_SIZE:
@@ -62,9 +69,22 @@ void runMIMPIOS(int n, int ***toChlidren, int *toMIOS, int **tree, int **toBuffe
             not_left_mpi[request[0]] = false;
             init_count--;
             leftMIMPI++;
-            int sigkill[3] = {0, 0, 0};
+            int sigkill[3] = {-2, -2, -2};
             assert(request_to_buffer[request[0]][1] != -1);
             chsend(request_to_buffer[request[0]][1], sigkill, 3 * sizeof(int));
+            for (int i = 0; i < n; i++)
+            {
+                if (waiting[i][1] == request[0])
+                {
+                    //printf("%d waiting for %d\n", i, waiting[i][1]);
+                    int left_MIMPI_sig[3] = {-1, -1, -1};
+                    chsend(request_to_buffer[i][1], left_MIMPI_sig, 3 * sizeof(int));
+                }
+                waiting[i][0] = -1;
+                waiting[i][1] = -1;
+                waiting[i][2] = -1;
+            }
+            
             if (leftMIMPI == n)
             {
                 for (size_t i = 0; i < n; i++)
@@ -96,6 +116,13 @@ void runMIMPIOS(int n, int ***toChlidren, int *toMIOS, int **tree, int **toBuffe
                 response[0] = toBuffer[send_request[1]][1];
                 int destination = send_request[1];
                 send_request[1] = request[0];
+                if (memcmp(waiting[destination], send_request, 3 * sizeof(int)) == 0)
+                {
+                    waiting[destination][0] = -1;
+                    waiting[destination][1] = -1;
+                    waiting[destination][2] = -1;
+                }
+                
                 chsend(request_to_buffer[destination][1], send_request, 3 * sizeof(int));
                 chsend(toChlidren[request[0]][0][1], &response[0], sizeof(int));
             }
@@ -105,16 +132,15 @@ void runMIMPIOS(int n, int ***toChlidren, int *toMIOS, int **tree, int **toBuffe
             int resp = ERROR;
             chrecv(toMIOS[0], recieve_request, 3 * sizeof(int));
             buffer_t* temp = find_first(buffers[request[0]], recieve_request[0], recieve_request[1], recieve_request[2]);
-
-            
-            if (temp != NULL || not_left_mpi[recieve_request[1]])
-            {
-                resp = 0;
-            }
             if (temp != NULL)
             {
+                resp = 0;
                 free(temp);
+            } else if (not_left_mpi[recieve_request[1]]) {
+                resp = 0;
+                memcpy(waiting[request[0]], recieve_request, 3 * sizeof(int));
             }
+            
             
             chsend(toChlidren[request[0]][0][1], &resp, sizeof(int));
             break;

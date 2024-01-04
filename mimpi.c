@@ -54,6 +54,7 @@ volatile int request_tag = -2;
 static buffer_t *recieve_buffer;
 static bool any_finished = false;
 static int from_OS_buffer;
+static bool recieve_fail = false;
 
 void mimpi_send_request(int request)
 {
@@ -114,34 +115,42 @@ void *recieve(void *arg)
     {
         int request[3];
         chrecv(from_OS_buffer, request, 3 * sizeof(int)); // main przesyla
-        if (request[2] == 0)
-        {
-            break;
-        }
-
-        buffer_t *element = malloc(sizeof(buffer_t));
-        element->tag = request[2];
-        element->source = request[1];
-        element->count = request[0];
-        element->buffor = malloc(request[0]);
-        element->next = NULL;
-        generalized_recieve(bufferChannel, element->buffor, element->count);
         pthread_mutex_lock(buffer_protection);
-        push_back(recieve_buffer, element);
-
-        if (element->tag == request_tag && element->count == request_count && element->source == request_source)
-        {;
-            
-            request_tag = -1;
-            request_count = -1;
-            request_source = -1;
-            pthread_mutex_unlock(buffer_protection);
-            pthread_mutex_unlock(await_correct_request);
-        }
-        else
+        if (request[2] == -2)
         {
             pthread_mutex_unlock(buffer_protection);
+            break;
+        } else if (request[2] == -1) {
+            recieve_fail = true;
+            pthread_mutex_unlock(await_correct_request);
+        } else {
+            pthread_mutex_unlock(buffer_protection);
+            buffer_t *element = malloc(sizeof(buffer_t));
+            element->tag = request[2];
+            element->source = request[1];
+            element->count = request[0];
+            element->buffor = malloc(request[0]);
+            element->next = NULL;
+            generalized_recieve(bufferChannel, element->buffor, element->count);
+            pthread_mutex_lock(buffer_protection);
+            push_back(recieve_buffer, element);
+
+            if (element->tag == request_tag && element->count == request_count && element->source == request_source)
+            {;
+                
+                request_tag = -1;
+                request_count = -1;
+                request_source = -1;
+                pthread_mutex_unlock(buffer_protection);
+                pthread_mutex_unlock(await_correct_request);
+            }
+            else
+            {
+                pthread_mutex_unlock(buffer_protection);
+            }
         }
+
+        
     }
     return NULL;
 }
@@ -256,6 +265,13 @@ MIMPI_Retcode MIMPI_Recv(
         request_source = source;
         pthread_mutex_unlock(buffer_protection);
         pthread_mutex_lock(await_correct_request); // zly typ mutexa mamy problem
+        if (recieve_fail)
+        {
+            recieve_fail = false;
+            pthread_mutex_unlock(buffer_protection);
+            return MIMPI_ERROR_REMOTE_FINISHED;
+        }
+        
         element = find_first(recieve_buffer, count, source, tag);
     }
     memcpy(data, element->buffor, element->count);
