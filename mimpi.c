@@ -46,12 +46,13 @@ static int from_leftson;
 static int bufferChannel;
 static int world_size;
 static bool deadlock_detection;
+static bool deadlock = false;
 pthread_t reciever;
 pthread_mutex_t *buffer_protection;
 pthread_mutex_t *await_correct_request;
-volatile int request_count = -2;
-volatile int request_source = -2;
-volatile int request_tag = -2;
+static int request_count = -2;
+static int request_source = -2;
+static int request_tag = -2;
 static buffer_t *recieve_buffer;
 static bool any_finished = false;
 static int from_OS_buffer;
@@ -116,6 +117,8 @@ void *recieve(void *arg)
     {
         int request[3];
         chrecv(from_OS_buffer, request, 3 * sizeof(int));
+        printf("receiver got pid %d request %d\n", pid, request[2]);
+        //printf("buffer lock %d\n", pid);
         pthread_mutex_lock(buffer_protection);
         if (request[2] == -2)
         {
@@ -123,6 +126,11 @@ void *recieve(void *arg)
             break;
         } else if (request[2] == -1) {
             recieve_fail = true;
+            pthread_mutex_unlock(await_correct_request);
+        } else if (request[2] == -3) {
+            //printf("mutex unlocked %d\n", pid);
+            deadlock = true;
+            printf("receieve unlock %d\n", pid);
             pthread_mutex_unlock(await_correct_request);
         } else {
             pthread_mutex_unlock(buffer_protection);
@@ -148,7 +156,6 @@ void *recieve(void *arg)
             {
                 pthread_mutex_unlock(buffer_protection);
             }
-            printf("inserted to buffer %d %d %d\n", element->count, element->source, element->tag);
         }
         
     }
@@ -189,6 +196,7 @@ void MIMPI_Init(bool enable_deadlock_detection)
 
 void MIMPI_Finalize()
 {
+    printf("pid %d leaving\n", pid);
     mimpi_send_request(MIMPI_FINALIZE);
     int *ret = NULL;
     char leftMPI = MIMPI_LEFT;
@@ -249,32 +257,47 @@ MIMPI_Retcode MIMPI_Recv(
 
     chsend(to_OS_public_fd, req, 5 * sizeof(int));
     chrecv(from_OS_fd, &response, sizeof(int));
-    printf("can read\n");
+    printf("resp pid %d code %d\n", pid, response);
     if (response == ERROR)
     {
         return MIMPI_ERROR_REMOTE_FINISHED;
     }
     if (deadlock_detection && response == DEADLOCK)
     {
-        return DEADLOCK; 
+        return MIMPI_ERROR_DEADLOCK_DETECTED; 
     }
     
+    //printf("buffer lock %d\n", pid);
     pthread_mutex_lock(buffer_protection);
     buffer_t *element = find_first(recieve_buffer, count, source, tag);
-    printf("trying to read %p\n", element);
+    printf("element %p %d\n", element, pid);
     if (element == NULL)
     {
         request_tag = tag;
         request_count = count;
         request_source = source;
+        //printf("buffer unlock %d\n", pid);
         pthread_mutex_unlock(buffer_protection);
+        printf("reciever lock %d\n", pid);
         pthread_mutex_lock(await_correct_request); 
         if (recieve_fail)
         {
             recieve_fail = false;
             pthread_mutex_unlock(buffer_protection);
             return MIMPI_ERROR_REMOTE_FINISHED;
-        } 
+        }
+        if (deadlock_detection && deadlock)
+        {
+            //printf("deadlock %d\n", pid);
+            deadlock = false;
+            request_tag = -1;
+            request_count = -1;
+            request_source = -1;
+            //printf("buffer unlock %d\n", pid);
+            pthread_mutex_unlock(buffer_protection);
+            return MIMPI_ERROR_DEADLOCK_DETECTED;
+        }
+        
         element = find_first(recieve_buffer, count, source, tag);
         
     }

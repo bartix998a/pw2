@@ -23,15 +23,27 @@
 
 extern char **environ;
 
-bool foundCycle(int n, int **waiting, int start, int finish)
+bool findCycle(int n, int **waiting, int start, int finish, int** request_to_buffer)
 {
+    int sig_deadlock[3] = {-3, -3, -3};
     if (waiting[start][1] == -1)
     {
         return false;
     } else if (waiting[start][1] == finish) {
+        waiting[start][0] = -1;
+        waiting[start][1] = -1;
+        waiting[start][2] = -1;
+        chsend(request_to_buffer[start][1], sig_deadlock, 3 * sizeof(int));
         return true;
     } else {
-        return foundCycle(n, waiting, waiting[start][1], finish);
+        if(findCycle(n, waiting, waiting[start][1], finish, request_to_buffer)) {
+            waiting[start][0] = -1;
+            waiting[start][1] = -1;
+            waiting[start][2] = -1;
+            chsend(request_to_buffer[start][1], sig_deadlock, 3 * sizeof(int));
+            return true;
+        }
+        return false;
     }
     
 }
@@ -146,7 +158,6 @@ void runMIMPIOS(int n, int ***toChlidren, int *toMIOS, int **tree, int **toBuffe
             chrecv(toMIOS[0], recieve_request, 3 * sizeof(int));
             printf("recieve request %d %d %d\n", recieve_request[0], recieve_request[1], recieve_request[2]);
             buffer_t *temp = find_first(buffers[request[0]], recieve_request[0], recieve_request[1], recieve_request[2]);
-            printf("read %p\n", temp);
             if (temp != NULL)
             {
                 resp = 0;
@@ -166,7 +177,6 @@ void runMIMPIOS(int n, int ***toChlidren, int *toMIOS, int **tree, int **toBuffe
             chrecv(toMIOS[0], recieve_request_dl, 3 * sizeof(int));
             printf("recieve request %d %d %d\n", recieve_request_dl[0], recieve_request_dl[1], recieve_request_dl[2]);
             buffer_t *temp_dl = find_first(buffers[request[0]], recieve_request_dl[0], recieve_request_dl[1], recieve_request_dl[2]);
-            printf("read %p\n", temp_dl);
             if (temp_dl != NULL)
             {
                 resp_dl = 0;
@@ -174,7 +184,7 @@ void runMIMPIOS(int n, int ***toChlidren, int *toMIOS, int **tree, int **toBuffe
             }
             else
             {
-                bool fCycle = foundCycle(n, waiting, recieve_request_dl[1], request[0]);
+                bool fCycle = findCycle(n, waiting, recieve_request_dl[1], request[0], request_to_buffer);
                 if (not_left_mpi[recieve_request_dl[1]] && !fCycle)
                 {
                     resp_dl = 0;
@@ -346,11 +356,14 @@ int main(int argc, char **argv)
     free(toMIOS);
     channels_finalize();
 
+    int exit_code;
+
     for (int i = 0; i < n; i++)
     {
         int temp = 0;
         wait(&temp);
+        exit_code += temp;
     }
 
-    return 0;
+    return exit_code;
 }
