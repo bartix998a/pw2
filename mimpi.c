@@ -141,15 +141,14 @@ void *recieve(void *arg)
                 request_tag = -1;
                 request_count = -1;
                 request_source = -1;
-                pthread_mutex_unlock(buffer_protection);
                 pthread_mutex_unlock(await_correct_request);
             }
             else
             {
                 pthread_mutex_unlock(buffer_protection);
             }
+            printf("inserted to buffer %d %d %d\n", element->count, element->source, element->tag);
         }
-
         
     }
     return NULL;
@@ -248,12 +247,14 @@ MIMPI_Retcode MIMPI_Recv(
 
     chsend(to_OS_public_fd, req, 5 * sizeof(int));
     chrecv(from_OS_fd, &response, sizeof(int));
+    printf("can read\n");
     if (response == ERROR)
     {
         return MIMPI_ERROR_REMOTE_FINISHED;
     }
     pthread_mutex_lock(buffer_protection);
     buffer_t *element = find_first(recieve_buffer, count, source, tag);
+    printf("trying to read %p\n", element);
     if (element == NULL)
     {
         request_tag = tag;
@@ -266,10 +267,11 @@ MIMPI_Retcode MIMPI_Recv(
             recieve_fail = false;
             pthread_mutex_unlock(buffer_protection);
             return MIMPI_ERROR_REMOTE_FINISHED;
-        }
-        
+        } 
         element = find_first(recieve_buffer, count, source, tag);
+        
     }
+    pthread_mutex_unlock(buffer_protection);
     memcpy(data, element->buffor, element->count);
     free(element->buffor);
     free(element);
@@ -315,9 +317,7 @@ MIMPI_Retcode MIMPI_Barrier()
     char signal;
     if (2 * (pid + 1) <= world_size)
     {
-        printf("receiving from left son %d\n", pid);
         chrecv(from_leftson, &signal, 1);
-        printf("received from left son %d\n", pid);
         if (MIMPI_BCAST_neighbour_left(signal, from_leftson))
         {
             return MIMPI_ERROR_REMOTE_FINISHED;
@@ -325,7 +325,6 @@ MIMPI_Retcode MIMPI_Barrier()
     }
     if (2 * (pid + 1) + 1 <= world_size)
     {
-        printf("recieving from right son %d\n", pid);
         chrecv(from_rightson, &signal, 1);
         if (MIMPI_BCAST_neighbour_left(signal, from_rightson))
         {
@@ -335,10 +334,8 @@ MIMPI_Retcode MIMPI_Barrier()
 
     if ((pid + 1) != 1)
     {
-        printf("sending to parnt %d\n", pid);
         signal = MIMPI_BARIER;
         chsend(to_parent_fd, &signal, 1);
-        printf("recieving from parent %d\n", pid);
         chrecv(from_parent_fd, &signal, 1);
         if (MIMPI_BCAST_neighbour_left(signal, from_parent_fd))
         {
@@ -349,13 +346,11 @@ MIMPI_Retcode MIMPI_Barrier()
     if (2 * (pid + 1) <= world_size)
     {
         signal = MIMPI_BARIER;
-        printf("sending to left son%d\n", pid);
         chsend(to_leftson, &signal, 1);
     }
     if (2 * (pid + 1) + 1 <= world_size)
     {
         signal = MIMPI_BARIER;
-        printf("recieving from left son %d\n", pid);
         chsend(to_rightson, &signal, 1);
     }
 
@@ -371,7 +366,13 @@ MIMPI_Retcode MIMPI_Bcast(
     char signal;
     char send_signal = pid == root ? MIMPI_BCAST_GOOD : MIMPI_BCAST_BAD;
 
-    if (2 * pid <= world_size)
+    if (any_finished)
+    {
+        return MIMPI_ERROR_REMOTE_FINISHED;
+    }
+    
+
+    if (2 * (pid + 1) <= world_size)
     {
         chrecv(from_leftson, &signal, 1);
         if (MIMPI_BCAST_neighbour_left(signal, from_leftson))
@@ -384,7 +385,7 @@ MIMPI_Retcode MIMPI_Bcast(
             send_signal = MIMPI_BCAST_GOOD;
         }
     }
-    if (2 * pid + 1 <= world_size)
+    if (2 * (pid + 1) + 1 <= world_size)
     {
         chrecv(from_rightson, &signal, 1);
         if (MIMPI_BCAST_neighbour_left(signal, from_rightson))
@@ -398,29 +399,31 @@ MIMPI_Retcode MIMPI_Bcast(
         }
     }
 
-    if (pid != 1)
+    if ((pid + 1) != 1)
     {
         chsend(to_parent_fd, &send_signal, 1);
         if (send_signal == MIMPI_BCAST_GOOD)
         {
             generalized_send(to_parent_fd, data, count);
         }
+        chrecv(from_parent_fd, &signal, 1);
 
-        generalized_recieve(from_parent_fd, data, count);
         if (MIMPI_BCAST_neighbour_left(signal, from_parent_fd))
         {
             return MIMPI_ERROR_REMOTE_FINISHED;
         }
+
+        generalized_recieve(from_parent_fd, data, count);
     }
 
-    if (2 * pid <= world_size)
+    if (2 * (pid + 1) <= world_size)
     {
-        signal = MIMPI_BARIER;
+        chsend(to_leftson, &signal, 1);
         generalized_send(to_leftson, data, count);
     }
-    if (2 * pid + 1 <= world_size)
+    if (2 * (pid + 1) + 1 <= world_size)
     {
-        signal = MIMPI_BARIER;
+        chsend(to_rightson, &signal, 1);
         generalized_send(to_rightson, data, count);
     }
     return MIMPI_SUCCESS;
@@ -460,8 +463,7 @@ uint8_t operation(uint8_t first, uint8_t second, MIMPI_Op op)
     return 0;
 }
 
-//TODO nie dziala na wiecej niz 512 bitow 
-// to wyzej tez
+// TODO: dziala za wolno
 MIMPI_Retcode MIMPI_Reduce(
     void const *send_data,
     void *recv_data,
@@ -470,14 +472,14 @@ MIMPI_Retcode MIMPI_Reduce(
     int root)
 {
     GOOD_RANK_BCAST(root);
-    char signal;
-    char send_signal = pid == root ? MIMPI_BCAST_GOOD : MIMPI_BCAST_BAD;
+    char signal = MIMPI_BCAST_GOOD;
+    char send_signal = MIMPI_BCAST_GOOD;
     uint8_t *left_recieve = NULL;
     uint8_t *right_recieve = NULL;
     uint8_t *send_buffer = malloc(count * sizeof(uint8_t));
     memcpy(send_buffer, send_data, count);
 
-    if (2 * pid <= world_size)
+    if (2 * (pid + 1) <= world_size)
     {
         chrecv(from_leftson, &signal, 1);
         if (MIMPI_BCAST_neighbour_left(signal, from_leftson))
@@ -491,7 +493,7 @@ MIMPI_Retcode MIMPI_Reduce(
             send_signal = MIMPI_BCAST_GOOD;
         }
     }
-    if (2 * pid + 1 <= world_size)
+    if (2 * (pid + 1) + 1 <= world_size)
     {
         chrecv(from_rightson, &signal, 1);
         if (MIMPI_BCAST_neighbour_left(signal, from_rightson))
@@ -518,8 +520,8 @@ MIMPI_Retcode MIMPI_Reduce(
             send_buffer[i] = operation(send_buffer[i], right_recieve[i], op);
         }
     }
-
-    if (pid != 1)
+    
+    if ((pid + 1) != 1)
     {
         chsend(to_parent_fd, &send_signal, 1);
         if (send_signal == MIMPI_BCAST_GOOD)
@@ -527,21 +529,29 @@ MIMPI_Retcode MIMPI_Reduce(
             generalized_send(to_parent_fd, send_buffer, count);
         }
 
-        generalized_recieve(from_parent_fd, pid == root ? recv_data : send_buffer, count);
+        chrecv(from_parent_fd, &signal, 1);
+        generalized_recieve(from_parent_fd, send_buffer, count);
+        
+        
         if (MIMPI_BCAST_neighbour_left(signal, from_parent_fd))
         {
             return MIMPI_ERROR_REMOTE_FINISHED;
         }
     }
 
-    if (2 * pid <= world_size)
+    if (pid == root)
     {
-        signal = MIMPI_BARIER;
+        memcpy(recv_data, send_buffer, count);
+    }
+
+    if (2 * (pid + 1) <= world_size)
+    {
+        chsend(to_leftson, &signal, 1);
         generalized_send(to_leftson, send_buffer, count);
     }
-    if (2 * pid + 1 <= world_size)
+    if (2 * (pid + 1) + 1 <= world_size)
     {
-        signal = MIMPI_BARIER;
+        chsend(to_rightson, &signal, 1);
         generalized_send(to_rightson, send_buffer, count);
     }
 

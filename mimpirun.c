@@ -132,7 +132,9 @@ void runMIMPIOS(int n, int ***toChlidren, int *toMIOS, int **tree, int **toBuffe
             int recieve_request[3];
             int resp = ERROR;
             chrecv(toMIOS[0], recieve_request, 3 * sizeof(int));
+            printf("recieve request %d %d %d\n", recieve_request[0], recieve_request[1], recieve_request[2]);
             buffer_t* temp = find_first(buffers[request[0]], recieve_request[0], recieve_request[1], recieve_request[2]);
+            printf("read %p\n", temp);
             if (temp != NULL)
             {
                 resp = 0;
