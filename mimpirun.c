@@ -23,12 +23,25 @@
 
 extern char **environ;
 
+bool foundCycle(int n, int **waiting, int start, int finish)
+{
+    if (waiting[start][1] == -1)
+    {
+        return false;
+    } else if (waiting[start][1] == finish) {
+        return true;
+    } else {
+        return foundCycle(n, waiting, waiting[start][1], finish);
+    }
+    
+}
+
 void runMIMPIOS(int n, int ***toChlidren, int *toMIOS, int **tree, int **toBuffer, int **request_to_buffer)
 {
     int request[2]; // request[0] - who sent it, request[1] - request proper
     int send_request[3];
     int response[10];
-    int** waiting = malloc(n * sizeof(int*));
+    int **waiting = malloc(n * sizeof(int *));
     bool *not_left_mpi = (bool *)malloc(n * sizeof(bool));
     buffer_t **buffers = malloc(n * sizeof(buffer_t *));
     for (size_t i = 0; i < n; i++)
@@ -54,7 +67,6 @@ void runMIMPIOS(int n, int ***toChlidren, int *toMIOS, int **tree, int **toBuffe
     while (true)
     {
         chrecv(toMIOS[0], request, 2 * sizeof(int));
-        printf("req %d %d\n", request[0], request[1]);
         switch (request[1])
         {
         case WORLD_SIZE:
@@ -76,7 +88,7 @@ void runMIMPIOS(int n, int ***toChlidren, int *toMIOS, int **tree, int **toBuffe
             {
                 if (waiting[i][1] == request[0])
                 {
-                    //printf("%d waiting for %d\n", i, waiting[i][1]);
+                    // printf("%d waiting for %d\n", i, waiting[i][1]);
                     int left_MIMPI_sig[3] = {-1, -1, -1};
                     chsend(request_to_buffer[i][1], left_MIMPI_sig, 3 * sizeof(int));
                     waiting[i][0] = -1;
@@ -84,7 +96,7 @@ void runMIMPIOS(int n, int ***toChlidren, int *toMIOS, int **tree, int **toBuffe
                     waiting[i][2] = -1;
                 }
             }
-            
+
             if (leftMIMPI == n)
             {
                 for (size_t i = 0; i < n; i++)
@@ -123,7 +135,7 @@ void runMIMPIOS(int n, int ***toChlidren, int *toMIOS, int **tree, int **toBuffe
                     waiting[destination][1] = -1;
                     waiting[destination][2] = -1;
                 }
-                
+
                 chsend(request_to_buffer[destination][1], send_request, 3 * sizeof(int));
                 chsend(toChlidren[request[0]][0][1], &response[0], sizeof(int));
             }
@@ -133,19 +145,46 @@ void runMIMPIOS(int n, int ***toChlidren, int *toMIOS, int **tree, int **toBuffe
             int resp = ERROR;
             chrecv(toMIOS[0], recieve_request, 3 * sizeof(int));
             printf("recieve request %d %d %d\n", recieve_request[0], recieve_request[1], recieve_request[2]);
-            buffer_t* temp = find_first(buffers[request[0]], recieve_request[0], recieve_request[1], recieve_request[2]);
+            buffer_t *temp = find_first(buffers[request[0]], recieve_request[0], recieve_request[1], recieve_request[2]);
             printf("read %p\n", temp);
             if (temp != NULL)
             {
                 resp = 0;
                 free(temp);
-            } else if (not_left_mpi[recieve_request[1]]) {
+            }
+            else if (not_left_mpi[recieve_request[1]])
+            {
                 resp = 0;
                 memcpy(waiting[request[0]], recieve_request, 3 * sizeof(int));
             }
-            
-            
+
             chsend(toChlidren[request[0]][0][1], &resp, sizeof(int));
+            break;
+        case MIMPI_RECIEVE_DEADLOCK_DETECTION:
+            int recieve_request_dl[3];
+            int resp_dl = ERROR;
+            chrecv(toMIOS[0], recieve_request_dl, 3 * sizeof(int));
+            printf("recieve request %d %d %d\n", recieve_request_dl[0], recieve_request_dl[1], recieve_request_dl[2]);
+            buffer_t *temp_dl = find_first(buffers[request[0]], recieve_request_dl[0], recieve_request_dl[1], recieve_request_dl[2]);
+            printf("read %p\n", temp_dl);
+            if (temp_dl != NULL)
+            {
+                resp_dl = 0;
+                free(temp_dl);
+            }
+            else
+            {
+                bool fCycle = foundCycle(n, waiting, recieve_request_dl[1], request[0]);
+                if (not_left_mpi[recieve_request_dl[1]] && !fCycle)
+                {
+                    resp_dl = 0;
+                    memcpy(waiting[request[0]], recieve_request_dl, 3 * sizeof(int));
+                } else if (not_left_mpi[recieve_request_dl[1]] && fCycle) {
+                    resp_dl = DEADLOCK;
+                }
+            }
+
+            chsend(toChlidren[request[0]][0][1], &resp_dl, sizeof(int));
             break;
         }
     }
@@ -239,7 +278,7 @@ int main(int argc, char **argv)
         setenv("MIMPI_to_parent", temp, 1);
 
         fillWithZero(temp);
-        sprintf(temp, "%d", (2 * (pid + 1))  <= n ? tree[2 * (pid + 1)][1] : -1);
+        sprintf(temp, "%d", (2 * (pid + 1)) <= n ? tree[2 * (pid + 1)][1] : -1);
         setenv("MIMPI_to_left_son", temp, 1);
 
         fillWithZero(temp);
@@ -270,7 +309,7 @@ int main(int argc, char **argv)
 
     // here is only one process with pid == 0
     runMIMPIOS(n, toChildren, toMIOS, tree, toBuffer, os_to_buffer);
-    
+
     close(toMIOS[0]);
     close(toMIOS[1]);
     for (int i = 0; i <= n; i++)
@@ -306,7 +345,6 @@ int main(int argc, char **argv)
     free(toChildren);
     free(toMIOS);
     channels_finalize();
-    printf("wait\n");
 
     for (int i = 0; i < n; i++)
     {
@@ -314,6 +352,5 @@ int main(int argc, char **argv)
         wait(&temp);
     }
 
-    printf("exit\n");
     return 0;
 }

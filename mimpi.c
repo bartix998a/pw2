@@ -45,6 +45,7 @@ static int to_leftson;
 static int from_leftson;
 static int bufferChannel;
 static int world_size;
+static bool deadlock_detection;
 pthread_t reciever;
 pthread_mutex_t *buffer_protection;
 pthread_mutex_t *await_correct_request;
@@ -174,6 +175,7 @@ void initialize_mutexes()
 
 void MIMPI_Init(bool enable_deadlock_detection)
 {
+    deadlock_detection = enable_deadlock_detection;
     channels_init();
     init_static_variables();
     initizlize_buffer();
@@ -243,7 +245,7 @@ MIMPI_Retcode MIMPI_Recv(
 {
     GOOD_RANK(source);
     int response;
-    int req[5] = {pid, MIMPI_RECIEVE, count, source, tag};
+    int req[5] = {pid, deadlock_detection ? MIMPI_RECIEVE_DEADLOCK_DETECTION : MIMPI_RECIEVE, count, source, tag};
 
     chsend(to_OS_public_fd, req, 5 * sizeof(int));
     chrecv(from_OS_fd, &response, sizeof(int));
@@ -252,6 +254,11 @@ MIMPI_Retcode MIMPI_Recv(
     {
         return MIMPI_ERROR_REMOTE_FINISHED;
     }
+    if (deadlock_detection && response == DEADLOCK)
+    {
+        return DEADLOCK; 
+    }
+    
     pthread_mutex_lock(buffer_protection);
     buffer_t *element = find_first(recieve_buffer, count, source, tag);
     printf("trying to read %p\n", element);

@@ -74,7 +74,11 @@ _Noreturn extern void fatal(const char* fmt, ...);
 
 #define MIMPI_BCAST_BAD 8
 
+#define MIMPI_RECIEVE_DEADLOCK_DETECTION 9
+
 #define ERROR 1
+
+#define DEADLOCK 2
 
 struct buffer {
     void* buffor;
