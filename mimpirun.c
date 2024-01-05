@@ -5,6 +5,7 @@
 #define _GNU_SOURCE
 #include <stdio.h>
 #include <stdint.h>
+#include <string.h>
 #include <stdbool.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -17,7 +18,7 @@
 #include "channel.h"
 
 #ifndef PIPE_BUF
-#define PIPE_BUF 4096
+#define PIPE_BUF 512
 #endif
 
 extern char **environ;
@@ -27,6 +28,7 @@ void runMIMPIOS(int n, int ***toChlidren, int *toMIOS, int **tree, int **toBuffe
     int request[2]; // request[0] - who sent it, request[1] - request proper
     int send_request[3];
     int response[10];
+    int** waiting = malloc(n * sizeof(int*));
     bool *not_left_mpi = (bool *)malloc(n * sizeof(bool));
     buffer_t **buffers = malloc(n * sizeof(buffer_t *));
     for (size_t i = 0; i < n; i++)
@@ -37,6 +39,10 @@ void runMIMPIOS(int n, int ***toChlidren, int *toMIOS, int **tree, int **toBuffe
         buffers[i]->tag = -1;
         buffers[i]->next = NULL;
         buffers[i]->buffor = NULL;
+        waiting[i] = malloc(3 * sizeof(int));
+        waiting[i][0] = -1;
+        waiting[i][1] = -1;
+        waiting[i][2] = -1;
     }
 
     for (int i = 0; i < n; i++)
@@ -48,6 +54,7 @@ void runMIMPIOS(int n, int ***toChlidren, int *toMIOS, int **tree, int **toBuffe
     while (true)
     {
         chrecv(toMIOS[0], request, 2 * sizeof(int));
+        printf("req %d %d\n", request[0], request[1]);
         switch (request[1])
         {
         case WORLD_SIZE:
@@ -55,24 +62,37 @@ void runMIMPIOS(int n, int ***toChlidren, int *toMIOS, int **tree, int **toBuffe
             chsend(toChlidren[request[0]][0][1], response, sizeof(int));
             break;
         case MIMPI_INIT:
-            not_left_mpi[request[0] - 1] = true;
+            not_left_mpi[request[0]] = true;
             init_count++;
-            printf("initialized %d\n", request[0] - 1);
             break;
         case MIMPI_FINALIZE:
-            not_left_mpi[request[0] - 1] = false;
+            not_left_mpi[request[0]] = false;
             init_count--;
             leftMIMPI++;
-            int sigkill[3] = {0, 0, 0};
+            int sigkill[3] = {-2, -2, -2};
             assert(request_to_buffer[request[0]][1] != -1);
             chsend(request_to_buffer[request[0]][1], sigkill, 3 * sizeof(int));
+            for (int i = 0; i < n; i++)
+            {
+                if (waiting[i][1] == request[0])
+                {
+                    //printf("%d waiting for %d\n", i, waiting[i][1]);
+                    int left_MIMPI_sig[3] = {-1, -1, -1};
+                    chsend(request_to_buffer[i][1], left_MIMPI_sig, 3 * sizeof(int));
+                    waiting[i][0] = -1;
+                    waiting[i][1] = -1;
+                    waiting[i][2] = -1;
+                }
+            }
+            
             if (leftMIMPI == n)
             {
                 for (size_t i = 0; i < n; i++)
                 {
                     remove_all(buffers[i]);
+                    free(waiting[i]);
                 }
-
+                free(waiting);
                 free(buffers);
                 free(not_left_mpi);
                 return;
@@ -80,10 +100,6 @@ void runMIMPIOS(int n, int ***toChlidren, int *toMIOS, int **tree, int **toBuffe
             break;
         case MIMPI_SEND:
             chrecv(toMIOS[0], send_request, 3 * sizeof(int));
-            if (send_request[2] == 0)
-            {
-                exit(1);
-            }
             if (!not_left_mpi[send_request[1]])
             {
                 response[0] = 0;
@@ -100,22 +116,35 @@ void runMIMPIOS(int n, int ***toChlidren, int *toMIOS, int **tree, int **toBuffe
                 push_back(buffers[send_request[1]], element);
                 response[0] = toBuffer[send_request[1]][1];
                 int destination = send_request[1];
+                send_request[1] = request[0];
+                if (memcmp(waiting[destination], send_request, 3 * sizeof(int)) == 0)
+                {
+                    waiting[destination][0] = -1;
+                    waiting[destination][1] = -1;
+                    waiting[destination][2] = -1;
+                }
+                
                 chsend(request_to_buffer[destination][1], send_request, 3 * sizeof(int));
                 chsend(toChlidren[request[0]][0][1], &response[0], sizeof(int));
             }
-            printf("processed send\n");
             break;
         case MIMPI_RECIEVE:
             int recieve_request[3];
             int resp = ERROR;
             chrecv(toMIOS[0], recieve_request, 3 * sizeof(int));
-            buffer_t* temp = find_first(buffers[request[0] - 1], recieve_request[0], recieve_request[1] + 1, recieve_request[2]);
-
-            
-            if (temp != NULL || not_left_mpi[recieve_request[1]])
+            printf("recieve request %d %d %d\n", recieve_request[0], recieve_request[1], recieve_request[2]);
+            buffer_t* temp = find_first(buffers[request[0]], recieve_request[0], recieve_request[1], recieve_request[2]);
+            printf("read %p\n", temp);
+            if (temp != NULL)
             {
                 resp = 0;
+                free(temp);
+            } else if (not_left_mpi[recieve_request[1]]) {
+                resp = 0;
+                memcpy(waiting[request[0]], recieve_request, 3 * sizeof(int));
             }
+            
+            
             chsend(toChlidren[request[0]][0][1], &resp, sizeof(int));
             break;
         }
@@ -142,6 +171,7 @@ int main(int argc, char **argv)
     int **reverse_tree = (int **)malloc((n + 1) * sizeof(int *));
     int **toBuffer = (int **)malloc((n + 1) * sizeof(int *));
     int **os_to_buffer = (int **)malloc((n + 1) * sizeof(int *));
+    channels_init();
     for (int i = 0; i < n + 1; i++)
     {
         toChildren[i] = (int **)malloc(2 * sizeof(int *));
@@ -164,7 +194,6 @@ int main(int argc, char **argv)
     }
 
     ASSERT_SYS_OK(channel(toMIOS));
-    printf("%d\n%d\n", toMIOS[0], toMIOS[1]);
     for (size_t i = 0; i <= n; i++)
     {
         ASSERT_SYS_OK(channel(toChildren[i][0]));
@@ -185,6 +214,7 @@ int main(int argc, char **argv)
 
     if (pid != 0)
     {
+        pid--;
         sprintf(temp, "%d", toMIOS[1]);
         setenv("MIMPI_to_OS_public", temp, 1);
 
@@ -201,27 +231,27 @@ int main(int argc, char **argv)
         setenv("MIMPI_ID", temp, 1);
 
         fillWithZero(temp);
-        sprintf(temp, "%d", tree[pid / 2][0]);
+        sprintf(temp, "%d", tree[pid + 1][0]);
         setenv("MIMPI_from_parent", temp, 1);
 
         fillWithZero(temp);
-        sprintf(temp, "%d", reverse_tree[pid / 2][1]);
+        sprintf(temp, "%d", reverse_tree[pid + 1][1]);
         setenv("MIMPI_to_parent", temp, 1);
 
         fillWithZero(temp);
-        sprintf(temp, "%d", 2 * pid <= n ? tree[2 * pid][1] : -1);
+        sprintf(temp, "%d", (2 * (pid + 1))  <= n ? tree[2 * (pid + 1)][1] : -1);
         setenv("MIMPI_to_left_son", temp, 1);
 
         fillWithZero(temp);
-        sprintf(temp, "%d", ((2 * pid) <= n ? reverse_tree[2 * pid][0] : -1));
+        sprintf(temp, "%d", ((2 * (pid + 1)) <= n ? reverse_tree[2 * (pid + 1)][0] : -1));
         setenv("MIMPI_from_left_son", temp, 1);
 
         fillWithZero(temp);
-        sprintf(temp, "%d", 2 * pid + 1 <= n ? tree[2 * pid + 1][1] : -1);
+        sprintf(temp, "%d", (2 * (pid + 1) + 1) <= n ? tree[(2 * (pid + 1) + 1)][1] : -1);
         setenv("MIMPI_to_right_son", temp, 1);
 
         fillWithZero(temp);
-        sprintf(temp, "%d", 2 * pid + 1 <= n ? reverse_tree[2 * pid + 1][0] : -1);
+        sprintf(temp, "%d", (2 * (pid + 1) + 1) <= n ? reverse_tree[2 * (pid + 1) + 1][0] : -1);
         setenv("MIMPI_from_right_son", temp, 1);
 
         fillWithZero(temp);
@@ -240,6 +270,7 @@ int main(int argc, char **argv)
 
     // here is only one process with pid == 0
     runMIMPIOS(n, toChildren, toMIOS, tree, toBuffer, os_to_buffer);
+    
     close(toMIOS[0]);
     close(toMIOS[1]);
     for (int i = 0; i <= n; i++)
@@ -250,6 +281,8 @@ int main(int argc, char **argv)
         close(toChildren[i][1][1]);
         close(tree[i][1]);
         close(tree[i][0]);
+        close(reverse_tree[i][1]);
+        close(reverse_tree[i][0]);
         close(os_to_buffer[i][1]);
         close(os_to_buffer[i][0]);
         close(toBuffer[i][1]);
@@ -272,6 +305,7 @@ int main(int argc, char **argv)
     free(os_to_buffer);
     free(toChildren);
     free(toMIOS);
+    channels_finalize();
     printf("wait\n");
 
     for (int i = 0; i < n; i++)

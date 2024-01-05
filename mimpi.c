@@ -15,16 +15,14 @@
 #include "mimpi.h"
 #include "mimpi_common.h"
 
-#ifndef PIPE_BUF
-#define PIPE_BUF 4096
-#endif
+#define ATOMIC_SIZE 512
 
 #define GOOD_RANK(x)                          \
-    if (x + 1 == pid)                         \
+    if (x == pid)                         \
     {                                         \
         return MIMPI_ERROR_ATTEMPTED_SELF_OP; \
     }                                         \
-    else if (x + 1 < 1 || x + 1 > world_size) \
+    else if (x < 0 || x >= world_size) \
     {                                         \
         return MIMPI_ERROR_NO_SUCH_RANK;      \
     }
@@ -56,6 +54,7 @@ volatile int request_tag = -2;
 static buffer_t *recieve_buffer;
 static bool any_finished = false;
 static int from_OS_buffer;
+static bool recieve_fail = false;
 
 void mimpi_send_request(int request)
 {
@@ -65,17 +64,17 @@ void mimpi_send_request(int request)
 
 void generalized_send(int fd, const void *data, int count)
 {
-    for (int i = 0; i < count / PIPE_BUF + (count % PIPE_BUF == 0 ? 0 : 1); i++)
+    for (int i = 0; i < count / ATOMIC_SIZE + (count % ATOMIC_SIZE == 0 ? 0 : 1); i++)
     {
-        chsend(fd, recieve_buffer + PIPE_BUF * i, count / PIPE_BUF == i ? count % PIPE_BUF : PIPE_BUF); // samo sie zbuforuje (chyba)
+        chsend(fd, data + ATOMIC_SIZE * i, count / ATOMIC_SIZE == i ? count % ATOMIC_SIZE : ATOMIC_SIZE); // samo sie zbuforuje (chyba)
     }
 }
 
 void generalized_recieve(int fd, void *data, int count)
 {
-    for (int i = 0; i < count / PIPE_BUF + (count % PIPE_BUF == 0 ? 0 : 1); i++)
+    for (int i = 0; i < count / ATOMIC_SIZE + (count % ATOMIC_SIZE == 0 ? 0 : 1); i++)
     {
-        chrecv(fd, recieve_buffer + PIPE_BUF * i, count / PIPE_BUF == i ? count % PIPE_BUF : PIPE_BUF); // samo sie zbuforuje (chyba)
+        chrecv(fd, data + ATOMIC_SIZE * i, count / ATOMIC_SIZE == i ? count % ATOMIC_SIZE : ATOMIC_SIZE); // samo sie zbuforuje (chyba)
     }
 }
 
@@ -115,49 +114,42 @@ void *recieve(void *arg)
     while (true)
     {
         int request[3];
-        chrecv(from_OS_buffer, request, 3 * sizeof(int)); // main przesyla
-        printf("rec for %d %d %d\n", request_count, request_source, request_tag);
-
-        if (request[2] == 0)
-        {
-            break;
-        }
-
-        buffer_t *element = malloc(sizeof(buffer_t));
-        element->tag = request[2];
-        element->source = request[1] - 1;
-        element->count = request[0];
-        element->buffor = malloc(request[0]);
-        element->next = NULL;
-        // for (int i = 0; i < element->count / PIPE_BUF + (element->count % PIPE_BUF == 0 ? 0 : 1); i++)
-        // {
-        //     chrecv(bufferChannel, element->buffor + PIPE_BUF * i, element->count / PIPE_BUF == i ? element->count % PIPE_BUF : PIPE_BUF); // samo sie zbuforuje (chyba)
-        // }
-        generalized_recieve(bufferChannel, element->buffor, element->count);
-        printf("rec for %d %d %d\n", request_count, request_source, request_tag);
+        chrecv(from_OS_buffer, request, 3 * sizeof(int));
         pthread_mutex_lock(buffer_protection);
-        printf("main m lock\n");
-        push_back(recieve_buffer, element);
-        printf("element %d %d %d inserted\n", element->count, element->source, element->tag);
-        printf("list %d %d %d \n", recieve_buffer->count, recieve_buffer->source, recieve_buffer->tag);
-        printf("list %d %d %d %p \n", recieve_buffer->next->count, recieve_buffer->next->source, recieve_buffer->next->tag, recieve_buffer->next->next);
-        printf("request tag %d\n", request_tag);
-        if (element->tag == request_tag && element->tag == request_tag && element->source == request_source)
-        {;
-            
-            request_tag = -1;
-            request_count = -1;
-            request_source = -1;
-            pthread_mutex_unlock(buffer_protection);
-            printf("main m unlock\n");
-            pthread_mutex_unlock(await_correct_request);
-            printf("second unlock\n");
-        }
-        else
+        if (request[2] == -2)
         {
             pthread_mutex_unlock(buffer_protection);
-            printf("main m unlock\n");
+            break;
+        } else if (request[2] == -1) {
+            recieve_fail = true;
+            pthread_mutex_unlock(await_correct_request);
+        } else {
+            pthread_mutex_unlock(buffer_protection);
+            buffer_t *element = malloc(sizeof(buffer_t));
+            element->tag = request[2];
+            element->source = request[1];
+            element->count = request[0];
+            element->buffor = malloc(request[0]);
+            element->next = NULL;
+            generalized_recieve(bufferChannel, element->buffor, element->count);
+            pthread_mutex_lock(buffer_protection);
+            push_back(recieve_buffer, element);
+
+            if (element->tag == request_tag && element->count == request_count && element->source == request_source)
+            {;
+                
+                request_tag = -1;
+                request_count = -1;
+                request_source = -1;
+                pthread_mutex_unlock(await_correct_request);
+            }
+            else
+            {
+                pthread_mutex_unlock(buffer_protection);
+            }
+            printf("inserted to buffer %d %d %d\n", element->count, element->source, element->tag);
         }
+        
     }
     return NULL;
 }
@@ -195,12 +187,11 @@ void MIMPI_Init(bool enable_deadlock_detection)
 
 void MIMPI_Finalize()
 {
-    printf("finalizing\n");
     mimpi_send_request(MIMPI_FINALIZE);
     int *ret = NULL;
     char leftMPI = MIMPI_LEFT;
     pthread_join(reciever, (void **)&ret);
-    //remove_all(recieve_buffer);
+    remove_all(recieve_buffer);
     pthread_mutex_destroy(buffer_protection);
     pthread_mutex_destroy(await_correct_request);
     free(buffer_protection);
@@ -219,7 +210,7 @@ int MIMPI_World_size()
 
 int MIMPI_World_rank()
 {
-    return pid - 1;
+    return pid;
 }
 
 MIMPI_Retcode MIMPI_Send(
@@ -228,7 +219,6 @@ MIMPI_Retcode MIMPI_Send(
     int destination,
     int tag)
 {
-    printf("sending\n");
     GOOD_RANK(destination);
     int request[5] = {pid, MIMPI_SEND, count, destination, tag};
     int dest_fd;
@@ -236,17 +226,12 @@ MIMPI_Retcode MIMPI_Send(
     chrecv(from_OS_fd, &dest_fd, sizeof(int));
     if (dest_fd != 0)
     {
-        // for (int i = 0; i < count / PIPE_BUF + (count % PIPE_BUF == 0 ? 0 : 1); i++)
-        // {
-        //     chsend(dest_fd, data + PIPE_BUF * i, count / PIPE_BUF == i ? count % PIPE_BUF : PIPE_BUF); // samo sie zbuforuje (chyba)
-        // }
         generalized_send(dest_fd, data, count);
     }
     else
     {
         return MIMPI_ERROR_REMOTE_FINISHED;
     }
-    printf("sent\n");
     return MIMPI_SUCCESS;
 }
 
@@ -256,35 +241,37 @@ MIMPI_Retcode MIMPI_Recv(
     int source,
     int tag)
 {
-    printf("recieving\n");
     GOOD_RANK(source);
     int response;
     int req[5] = {pid, MIMPI_RECIEVE, count, source, tag};
 
     chsend(to_OS_public_fd, req, 5 * sizeof(int));
     chrecv(from_OS_fd, &response, sizeof(int));
+    printf("can read\n");
     if (response == ERROR)
     {
         return MIMPI_ERROR_REMOTE_FINISHED;
     }
-    printf("OS agreed to recieve\n");
     pthread_mutex_lock(buffer_protection);
-    printf("main m lock\n");
     buffer_t *element = find_first(recieve_buffer, count, source, tag);
+    printf("trying to read %p\n", element);
     if (element == NULL)
     {
-        printf("waiting for %d %d %d\n", count, source, tag);
         request_tag = tag;
         request_count = count;
         request_source = source;
-        printf("waiting for %d %d %d\n", request_count, request_source, request_tag);
         pthread_mutex_unlock(buffer_protection);
-        printf("main m unlock\n");
-        printf("second lock\n");
-        pthread_mutex_lock(await_correct_request); // zly typ mutexa mamy problem
+        pthread_mutex_lock(await_correct_request); 
+        if (recieve_fail)
+        {
+            recieve_fail = false;
+            pthread_mutex_unlock(buffer_protection);
+            return MIMPI_ERROR_REMOTE_FINISHED;
+        } 
         element = find_first(recieve_buffer, count, source, tag);
+        
     }
-    printf("received %p %p", recieve_buffer, recieve_buffer->next);
+    pthread_mutex_unlock(buffer_protection);
     memcpy(data, element->buffor, element->count);
     free(element->buffor);
     free(element);
@@ -315,13 +302,20 @@ bool MIMPI_BCAST_neighbour_left(char signal, int signal_producer)
 
 MIMPI_Retcode MIMPI_Barrier()
 {
+
+    if (world_size == 1)
+    {
+        return MIMPI_SUCCESS;
+    }
+    
+
     if (any_finished)
     {
         return MIMPI_ERROR_REMOTE_FINISHED;
     }
 
     char signal;
-    if (2 * pid <= world_size)
+    if (2 * (pid + 1) <= world_size)
     {
         chrecv(from_leftson, &signal, 1);
         if (MIMPI_BCAST_neighbour_left(signal, from_leftson))
@@ -329,7 +323,7 @@ MIMPI_Retcode MIMPI_Barrier()
             return MIMPI_ERROR_REMOTE_FINISHED;
         }
     }
-    if (2 * pid + 1 <= world_size)
+    if (2 * (pid + 1) + 1 <= world_size)
     {
         chrecv(from_rightson, &signal, 1);
         if (MIMPI_BCAST_neighbour_left(signal, from_rightson))
@@ -338,7 +332,7 @@ MIMPI_Retcode MIMPI_Barrier()
         }
     }
 
-    if (pid != 1)
+    if ((pid + 1) != 1)
     {
         signal = MIMPI_BARIER;
         chsend(to_parent_fd, &signal, 1);
@@ -349,12 +343,12 @@ MIMPI_Retcode MIMPI_Barrier()
         }
     }
 
-    if (2 * pid <= world_size)
+    if (2 * (pid + 1) <= world_size)
     {
         signal = MIMPI_BARIER;
         chsend(to_leftson, &signal, 1);
     }
-    if (2 * pid + 1 <= world_size)
+    if (2 * (pid + 1) + 1 <= world_size)
     {
         signal = MIMPI_BARIER;
         chsend(to_rightson, &signal, 1);
@@ -372,7 +366,13 @@ MIMPI_Retcode MIMPI_Bcast(
     char signal;
     char send_signal = pid == root ? MIMPI_BCAST_GOOD : MIMPI_BCAST_BAD;
 
-    if (2 * pid <= world_size)
+    if (any_finished)
+    {
+        return MIMPI_ERROR_REMOTE_FINISHED;
+    }
+    
+
+    if (2 * (pid + 1) <= world_size)
     {
         chrecv(from_leftson, &signal, 1);
         if (MIMPI_BCAST_neighbour_left(signal, from_leftson))
@@ -385,7 +385,7 @@ MIMPI_Retcode MIMPI_Bcast(
             send_signal = MIMPI_BCAST_GOOD;
         }
     }
-    if (2 * pid + 1 <= world_size)
+    if (2 * (pid + 1) + 1 <= world_size)
     {
         chrecv(from_rightson, &signal, 1);
         if (MIMPI_BCAST_neighbour_left(signal, from_rightson))
@@ -399,29 +399,31 @@ MIMPI_Retcode MIMPI_Bcast(
         }
     }
 
-    if (pid != 1)
+    if ((pid + 1) != 1)
     {
         chsend(to_parent_fd, &send_signal, 1);
         if (send_signal == MIMPI_BCAST_GOOD)
         {
             generalized_send(to_parent_fd, data, count);
         }
+        chrecv(from_parent_fd, &signal, 1);
 
-        generalized_recieve(from_parent_fd, data, count);
         if (MIMPI_BCAST_neighbour_left(signal, from_parent_fd))
         {
             return MIMPI_ERROR_REMOTE_FINISHED;
         }
+
+        generalized_recieve(from_parent_fd, data, count);
     }
 
-    if (2 * pid <= world_size)
+    if (2 * (pid + 1) <= world_size)
     {
-        signal = MIMPI_BARIER;
+        chsend(to_leftson, &signal, 1);
         generalized_send(to_leftson, data, count);
     }
-    if (2 * pid + 1 <= world_size)
+    if (2 * (pid + 1) + 1 <= world_size)
     {
-        signal = MIMPI_BARIER;
+        chsend(to_rightson, &signal, 1);
         generalized_send(to_rightson, data, count);
     }
     return MIMPI_SUCCESS;
@@ -461,6 +463,7 @@ uint8_t operation(uint8_t first, uint8_t second, MIMPI_Op op)
     return 0;
 }
 
+// TODO: dziala za wolno
 MIMPI_Retcode MIMPI_Reduce(
     void const *send_data,
     void *recv_data,
@@ -469,14 +472,14 @@ MIMPI_Retcode MIMPI_Reduce(
     int root)
 {
     GOOD_RANK_BCAST(root);
-    char signal;
-    char send_signal = pid == root ? MIMPI_BCAST_GOOD : MIMPI_BCAST_BAD;
+    char signal = MIMPI_BCAST_GOOD;
+    char send_signal = MIMPI_BCAST_GOOD;
     uint8_t *left_recieve = NULL;
     uint8_t *right_recieve = NULL;
     uint8_t *send_buffer = malloc(count * sizeof(uint8_t));
     memcpy(send_buffer, send_data, count);
 
-    if (2 * pid <= world_size)
+    if (2 * (pid + 1) <= world_size)
     {
         chrecv(from_leftson, &signal, 1);
         if (MIMPI_BCAST_neighbour_left(signal, from_leftson))
@@ -490,7 +493,7 @@ MIMPI_Retcode MIMPI_Reduce(
             send_signal = MIMPI_BCAST_GOOD;
         }
     }
-    if (2 * pid + 1 <= world_size)
+    if (2 * (pid + 1) + 1 <= world_size)
     {
         chrecv(from_rightson, &signal, 1);
         if (MIMPI_BCAST_neighbour_left(signal, from_rightson))
@@ -517,8 +520,8 @@ MIMPI_Retcode MIMPI_Reduce(
             send_buffer[i] = operation(send_buffer[i], right_recieve[i], op);
         }
     }
-
-    if (pid != 1)
+    
+    if ((pid + 1) != 1)
     {
         chsend(to_parent_fd, &send_signal, 1);
         if (send_signal == MIMPI_BCAST_GOOD)
@@ -526,21 +529,29 @@ MIMPI_Retcode MIMPI_Reduce(
             generalized_send(to_parent_fd, send_buffer, count);
         }
 
-        generalized_recieve(from_parent_fd, pid == root ? recv_data : send_buffer, count);
+        chrecv(from_parent_fd, &signal, 1);
+        generalized_recieve(from_parent_fd, send_buffer, count);
+        
+        
         if (MIMPI_BCAST_neighbour_left(signal, from_parent_fd))
         {
             return MIMPI_ERROR_REMOTE_FINISHED;
         }
     }
 
-    if (2 * pid <= world_size)
+    if (pid == root)
     {
-        signal = MIMPI_BARIER;
+        memcpy(recv_data, send_buffer, count);
+    }
+
+    if (2 * (pid + 1) <= world_size)
+    {
+        chsend(to_leftson, &signal, 1);
         generalized_send(to_leftson, send_buffer, count);
     }
-    if (2 * pid + 1 <= world_size)
+    if (2 * (pid + 1) + 1 <= world_size)
     {
-        signal = MIMPI_BARIER;
+        chsend(to_rightson, &signal, 1);
         generalized_send(to_rightson, send_buffer, count);
     }
 
