@@ -88,7 +88,7 @@ void remove_element(buffer_t *list, buffer_t *element)
 void remove_all(buffer_t *list)
 {
     buffer_t *prev = list;
-    while (list->next != NULL)
+    while (prev->next != NULL)
     {
         list = prev->next;
         
