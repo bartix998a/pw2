@@ -23,21 +23,37 @@
 
 extern char **environ;
 
-bool findCycle(int n, int **waiting, int start, int finish, int** request_to_buffer)
+void dup_fd(int *fd, int *index)
 {
-    //printf("fcycle: %d %d %d\n", start, waiting[start][1], finish);
+    for (size_t i = 0; i < 2; i++)
+    {
+        dup2(fd[i], *index);
+        close(fd[i]);
+        fd[i] = *index;
+        (*index)++;
+    }
+}
+
+bool findCycle(int n, int **waiting, int start, int finish, int **request_to_buffer)
+{
+    // printf("fcycle: %d %d %d\n", start, waiting[start][1], finish);
     int sig_deadlock[3] = {-3, -3, -3};
     if (waiting[start][1] == -1)
     {
         return false;
-    } else if (waiting[start][1] == finish) {
+    }
+    else if (waiting[start][1] == finish)
+    {
         waiting[start][0] = -1;
         waiting[start][1] = -1;
         waiting[start][2] = -1;
         chsend(request_to_buffer[start][1], sig_deadlock, 3 * sizeof(int));
         return true;
-    } else {
-        if(findCycle(n, waiting, waiting[start][1], finish, request_to_buffer)) {
+    }
+    else
+    {
+        if (findCycle(n, waiting, waiting[start][1], finish, request_to_buffer))
+        {
             waiting[start][0] = -1;
             waiting[start][1] = -1;
             waiting[start][2] = -1;
@@ -46,7 +62,6 @@ bool findCycle(int n, int **waiting, int start, int finish, int** request_to_buf
         }
         return false;
     }
-    
 }
 
 void runMIMPIOS(int n, int ***toChlidren, int *toMIOS, int **tree, int **toBuffer, int **request_to_buffer)
@@ -132,8 +147,7 @@ void runMIMPIOS(int n, int ***toChlidren, int *toMIOS, int **tree, int **toBuffe
             }
             else
             {
-                
-                
+
                 response[0] = toBuffer[send_request[1]][1];
                 int destination = send_request[1];
                 send_request[1] = request[0];
@@ -142,7 +156,9 @@ void runMIMPIOS(int n, int ***toChlidren, int *toMIOS, int **tree, int **toBuffe
                     waiting[destination][0] = -1;
                     waiting[destination][1] = -1;
                     waiting[destination][2] = -1;
-                } else {
+                }
+                else
+                {
                     buffer_t *element = malloc(sizeof(buffer_t));
                     element->count = send_request[0];
                     element->source = request[0];
@@ -150,7 +166,7 @@ void runMIMPIOS(int n, int ***toChlidren, int *toMIOS, int **tree, int **toBuffe
                     element->buffor = NULL;
                     element->next = NULL;
                     push_back(buffers[destination], element);
-                    //printf("next: %d %d %p\n", destination, element->tag, element->next);
+                    // printf("next: %d %d %p\n", destination, element->tag, element->next);
                 }
 
                 chsend(request_to_buffer[destination][1], send_request, 3 * sizeof(int));
@@ -179,9 +195,9 @@ void runMIMPIOS(int n, int ***toChlidren, int *toMIOS, int **tree, int **toBuffe
             int recieve_request_dl[3];
             int resp_dl = ERROR;
             chrecv(toMIOS[0], recieve_request_dl, 3 * sizeof(int));
-            //printf("read request %d %d %d\n", recieve_request_dl[0], recieve_request_dl[1], recieve_request_dl[2]);
+            // printf("read request %d %d %d\n", recieve_request_dl[0], recieve_request_dl[1], recieve_request_dl[2]);
             buffer_t *temp_dl = find_first(buffers[request[0]], recieve_request_dl[0], recieve_request_dl[1], recieve_request_dl[2]);
-            //printf("waiting: %d %d %p\n", waiting[0][1], waiting[1][1], temp_dl);
+            // printf("waiting: %d %d %p\n", waiting[0][1], waiting[1][1], temp_dl);
             if (temp_dl != NULL)
             {
                 resp_dl = 0;
@@ -189,19 +205,21 @@ void runMIMPIOS(int n, int ***toChlidren, int *toMIOS, int **tree, int **toBuffe
             }
             else
             {
-                //printf("w %d %d %d\n", recieve_request_dl[1], request[0], waiting[recieve_request_dl[1]][1]);
+                // printf("w %d %d %d\n", recieve_request_dl[1], request[0], waiting[recieve_request_dl[1]][1]);
                 bool fCycle = findCycle(n, waiting, recieve_request_dl[1], request[0], request_to_buffer);
                 if (not_left_mpi[recieve_request_dl[1]] && !fCycle)
                 {
                     resp_dl = 0;
                     memcpy(waiting[request[0]], recieve_request_dl, 3 * sizeof(int));
-                } else if (not_left_mpi[recieve_request_dl[1]] && fCycle) {
+                }
+                else if (not_left_mpi[recieve_request_dl[1]] && fCycle)
+                {
                     resp_dl = DEADLOCK;
                 }
             }
 
             chsend(toChlidren[request[0]][0][1], &resp_dl, sizeof(int));
-            //printf("process %d awaiting: %d\n", request[0], waiting[request[0]][1]);
+            // printf("process %d awaiting: %d\n", request[0], waiting[request[0]][1]);
             break;
         }
     }
@@ -219,6 +237,7 @@ void fillWithZero(char *ar)
 
 int main(int argc, char **argv)
 {
+    int index = 20;
     int n = atoi(argv[1]);
     int pid = 0;
     int *toMIOS = (int *)malloc(2 * sizeof(int));                  // write to the second one
@@ -250,14 +269,21 @@ int main(int argc, char **argv)
     }
 
     ASSERT_SYS_OK(channel(toMIOS));
+    dup_fd(toMIOS, &index);
     for (size_t i = 0; i <= n; i++)
     {
         ASSERT_SYS_OK(channel(toChildren[i][0]));
+        dup_fd(toChildren[i][0], &index);
         ASSERT_SYS_OK(channel(toChildren[i][1]));
+        dup_fd(toChildren[i][1], &index);
         ASSERT_SYS_OK(channel(tree[i]));
+        dup_fd(tree[i], &index);
         ASSERT_SYS_OK(channel(reverse_tree[i]));
+        dup_fd(reverse_tree[i], &index);
         ASSERT_SYS_OK(channel(toBuffer[i]));
+        dup_fd(toBuffer[i], &index);
         ASSERT_SYS_OK(channel(os_to_buffer[i]));
+        dup_fd(os_to_buffer[i], &index);
     }
     for (size_t i = 0; i < n && pid == 0; i++)
     {
