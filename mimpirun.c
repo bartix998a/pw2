@@ -363,7 +363,7 @@ int main(int argc, char **argv)
     free(toMIOS);
     channels_finalize();
 
-    int exit_code;
+    int exit_code = 0;
 
     for (int i = 0; i < n; i++)
     {

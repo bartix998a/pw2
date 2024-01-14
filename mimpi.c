@@ -219,8 +219,16 @@ void MIMPI_Finalize()
     free(buffer_protection);
     free(await_correct_request);
     chsend(to_parent_fd, &leftMPI, sizeof(char));
-    chsend(to_leftson, &leftMPI, sizeof(char));
-    chsend(to_rightson, &leftMPI, sizeof(char));
+    if (2 * (pid + 1) <= world_size)
+    {
+        chsend(to_leftson, &leftMPI, sizeof(char));
+    }
+    
+    if (2 * (pid + 1) + 1 <= world_size)
+    {
+        chsend(to_rightson, &leftMPI, sizeof(char));
+    }
+    
     // send info to main thread and finish of reciever thread
     channels_finalize();
 }
