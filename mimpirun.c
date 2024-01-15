@@ -27,7 +27,6 @@ void dup_fd(int *fd, int *index)
 {
     for (size_t i = 0; i < 2; i++)
     {
-        close(*index);
         dup2(fd[i], *index);
         close(fd[i]);
         fd[i] = *index;
@@ -245,8 +244,6 @@ void fillWithZero(char *ar)
 
 int main(int argc, char **argv)
 {
-    // TODO: usunac to
-    close(103);
     int index = 20;
     int n = atoi(argv[1]);
     int pid = 0;
