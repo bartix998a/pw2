@@ -7,6 +7,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdbool.h>
+#include <unistd.h>
 #include <limits.h>
 #include <sys/mman.h>
 #include <pthread.h>
@@ -57,6 +58,7 @@ static buffer_t *recieve_buffer;
 static bool any_finished = false;
 static int from_OS_buffer;
 static bool recieve_fail = false;
+static int index_max;
 
 void mimpi_send_request(int request)
 {
@@ -109,6 +111,7 @@ void init_static_variables()
     from_rightson = atoi(getenv("MIMPI_from_right_son"));
     from_leftson = atoi(getenv("MIMPI_from_left_son"));
     from_OS_buffer = atoi(getenv("MIMPI_from_OS_buffer"));
+    index_max = atoi(getenv("MIMPI_index"));
 }
 
 void *recieve(void *arg)
@@ -206,6 +209,12 @@ void MIMPI_Init(bool enable_deadlock_detection)
     pthread_mutex_lock(await_correct_request);
 }
 
+void close_fds(){
+    for (int i = 20; i < index_max; i++) {
+        ASSERT_SYS_OK(close(i));
+    }
+}
+
 void MIMPI_Finalize()
 {
     //printf("pid %d leaving\n", pid);
@@ -230,6 +239,7 @@ void MIMPI_Finalize()
     }
     
     // send info to main thread and finish of reciever thread
+    close_fds();
     channels_finalize();
 }
 

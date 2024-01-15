@@ -27,6 +27,7 @@ void dup_fd(int *fd, int *index)
 {
     for (size_t i = 0; i < 2; i++)
     {
+        close(*index);
         dup2(fd[i], *index);
         close(fd[i]);
         fd[i] = *index;
@@ -237,6 +238,8 @@ void fillWithZero(char *ar)
 
 int main(int argc, char **argv)
 {
+    // TODO: usunac to
+    close(103);
     int index = 20;
     int n = atoi(argv[1]);
     int pid = 0;
@@ -349,6 +352,10 @@ int main(int argc, char **argv)
         fillWithZero(temp);
         sprintf(temp, "%d", os_to_buffer[pid][0]);
         setenv("MIMPI_from_OS_buffer", temp, 1);
+
+        fillWithZero(temp);
+        sprintf(temp, "%d", index);
+        setenv("MIMPI_index", temp, 1);
         ASSERT_SYS_OK(execvpe(argv[2], &(argv[2]), environ));
     }
 
