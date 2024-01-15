@@ -288,9 +288,11 @@ int main(int argc, char **argv)
     for (size_t i = 0; i < n && pid == 0; i++)
     {
         pid = fork();
-        if (pid != 0)
+        if (pid == 0)
         {
             pid = i + 1;
+        } else {
+            pid = 0;
         }
     }
 
@@ -389,14 +391,11 @@ int main(int argc, char **argv)
     free(toMIOS);
     channels_finalize();
 
-    int exit_code = 0;
-
-    for (int i = 0; i < n; i++)
+    for (size_t i = 0; i < n; i++)
     {
-        int temp = 0;
-        wait(&temp);
-        exit_code += temp;
+        ASSERT_SYS_OK(wait(NULL));
     }
-
-    return exit_code;
+    
+        
+    return 0;
 }
