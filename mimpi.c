@@ -76,10 +76,16 @@ void generalized_send(int fd, const void *data, int count)
 
 void generalized_recieve(int fd, void *data, int count)
 {
-    for (int i = 0; i < count / ATOMIC_SIZE + (count % ATOMIC_SIZE == 0 ? 0 : 1); i++)
+    // for (int i = 0; i < count / ATOMIC_SIZE + (count % ATOMIC_SIZE == 0 ? 0 : 1); i++)
+    // {
+    //     chrecv(fd, data + ATOMIC_SIZE * i, count / ATOMIC_SIZE == i ? count % ATOMIC_SIZE : ATOMIC_SIZE); // samo sie zbuforuje (chyba)
+    // }
+    size_t passed = 0;
+    while (passed != count)
     {
-        chrecv(fd, data + ATOMIC_SIZE * i, count / ATOMIC_SIZE == i ? count % ATOMIC_SIZE : ATOMIC_SIZE); // samo sie zbuforuje (chyba)
+        passed += chrecv(fd, data + passed, count - passed);
     }
+    
 }
 
 void init_static_variables()
