@@ -159,7 +159,7 @@ void *recieve(void *arg)
             pthread_mutex_lock(buffer_protection);
             push_back(recieve_buffer, element);
 
-            if (element->tag == request_tag && element->count == request_count && element->source == request_source)
+            if ((element->tag == request_tag || request_tag == 0) && element->count == request_count && element->source == request_source)
             {;
                 
                 request_tag = -1;

@@ -60,7 +60,7 @@ buffer_t *find_first(buffer_t *list, int count, int source, int tag)
     {
         buffer_t *prev = list;
         list = list->next;
-        if ((tag == 0 ? true : (list->tag == tag)) && list->source == source && list->count == count)
+        if (((tag == 0) || (list->tag == tag)) && list->source == source && list->count == count)
         {
             prev->next = list->next;
             return list;

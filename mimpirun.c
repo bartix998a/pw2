@@ -140,7 +140,9 @@ void runMIMPIOS(int n, int ***toChlidren, int *toMIOS, int **tree, int **toBuffe
             }
             break;
         case MIMPI_SEND:
+        
             chrecv(toMIOS[0], send_request, 3 * sizeof(int));
+            // printf("send request %d to %d tag %d\n", request[0], send_request[1], send_request[2]);
             if (!not_left_mpi[send_request[1]])
             {
                 response[0] = 0;
@@ -152,8 +154,11 @@ void runMIMPIOS(int n, int ***toChlidren, int *toMIOS, int **tree, int **toBuffe
                 response[0] = toBuffer[send_request[1]][1];
                 int destination = send_request[1];
                 send_request[1] = request[0];
-                if (memcmp(waiting[destination], send_request, 3 * sizeof(int)) == 0)
+                if (memcmp(waiting[destination], send_request, 3 * sizeof(int)) == 0 || (
+                    memcmp(waiting[destination], send_request, 2 * sizeof(int)) == 0 && waiting[destination][2] == 0
+                ))
                 {
+                    // printf("found %d\n", destination);
                     waiting[destination][0] = -1;
                     waiting[destination][1] = -1;
                     waiting[destination][2] = -1;
@@ -175,10 +180,12 @@ void runMIMPIOS(int n, int ***toChlidren, int *toMIOS, int **tree, int **toBuffe
             }
             break;
         case MIMPI_RECIEVE:
+        // printf("recieve request %d\n", request[0]);
             int recieve_request[3];
             int resp = ERROR;
             chrecv(toMIOS[0], recieve_request, 3 * sizeof(int));
             buffer_t *temp = find_first(buffers[request[0]], recieve_request[0], recieve_request[1], recieve_request[2]);
+            // printf("recieve %d %p\n", request[0], temp);
             if (temp != NULL)
             {
                 resp = 0;
