@@ -87,7 +87,7 @@ struct buffer {
     int source;
     struct buffer* next;
 };
-typedef struct buffer buffer_t;// TODO: skopiuj kod ze snake'a 
+typedef struct buffer buffer_t;
 
 void push_back(buffer_t *list, buffer_t *element);
 
