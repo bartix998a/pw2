@@ -1,7 +1,3 @@
-/**
- * This file is for implementation of mimpirun program.
- * */
-
 #define _GNU_SOURCE
 #include <stdio.h>
 #include <stdint.h>
@@ -36,7 +32,6 @@ void dup_fd(int *fd, int *index)
 
 bool findCycle(int n, int **waiting, int start, int finish, int **request_to_buffer)
 {
-    // printf("fcycle: %d %d %d\n", start, waiting[start][1], finish);
     int sig_deadlock[3] = {-3, -3, -3};
     if (waiting[start][1] == -1)
     {
@@ -116,7 +111,6 @@ void runMIMPIOS(int n, int ***toChlidren, int *toMIOS, int **tree, int **toBuffe
             {
                 if (waiting[i][1] == request[0])
                 {
-                    // printf("%d waiting for %d\n", i, waiting[i][1]);
                     int left_MIMPI_sig[3] = {-1, -1, -1};
                     chsend(request_to_buffer[i][1], left_MIMPI_sig, 3 * sizeof(int));
                     waiting[i][0] = -1;
@@ -141,7 +135,6 @@ void runMIMPIOS(int n, int ***toChlidren, int *toMIOS, int **tree, int **toBuffe
         case MIMPI_SEND:
         
             chrecv(toMIOS[0], send_request, 3 * sizeof(int));
-            // printf("send request %d to %d tag %d\n", request[0], send_request[1], send_request[2]);
             if (!not_left_mpi[send_request[1]])
             {
                 response[0] = 0;
@@ -171,7 +164,6 @@ void runMIMPIOS(int n, int ***toChlidren, int *toMIOS, int **tree, int **toBuffe
                     element->buffor = NULL;
                     element->next = NULL;
                     push_back(buffers[destination], element);
-                    // printf("next: %d %d %p\n", destination, element->tag, element->next);
                 }
 
                 chsend(request_to_buffer[destination][1], send_request, 3 * sizeof(int));
@@ -179,12 +171,10 @@ void runMIMPIOS(int n, int ***toChlidren, int *toMIOS, int **tree, int **toBuffe
             }
             break;
         case MIMPI_RECIEVE:
-        // printf("recieve request %d\n", request[0]);
             int recieve_request[3];
             int resp = ERROR;
             chrecv(toMIOS[0], recieve_request, 3 * sizeof(int));
             buffer_t *temp = find_first(buffers[request[0]], recieve_request[0], recieve_request[1], recieve_request[2]);
-            // printf("recieve %d %p\n", request[0], temp);
             if (temp != NULL)
             {
                 resp = 0;
@@ -202,9 +192,7 @@ void runMIMPIOS(int n, int ***toChlidren, int *toMIOS, int **tree, int **toBuffe
             int recieve_request_dl[3];
             int resp_dl = ERROR;
             chrecv(toMIOS[0], recieve_request_dl, 3 * sizeof(int));
-            // printf("read request %d %d %d\n", recieve_request_dl[0], recieve_request_dl[1], recieve_request_dl[2]);
             buffer_t *temp_dl = find_first(buffers[request[0]], recieve_request_dl[0], recieve_request_dl[1], recieve_request_dl[2]);
-            // printf("waiting: %d %d %p\n", waiting[0][1], waiting[1][1], temp_dl);
             if (temp_dl != NULL)
             {
                 resp_dl = 0;
@@ -212,7 +200,6 @@ void runMIMPIOS(int n, int ***toChlidren, int *toMIOS, int **tree, int **toBuffe
             }
             else
             {
-                // printf("w %d %d %d\n", recieve_request_dl[1], request[0], waiting[recieve_request_dl[1]][1]);
                 bool fCycle = findCycle(n, waiting, recieve_request_dl[1], request[0], request_to_buffer);
                 if (not_left_mpi[recieve_request_dl[1]] && !fCycle)
                 {
@@ -226,7 +213,6 @@ void runMIMPIOS(int n, int ***toChlidren, int *toMIOS, int **tree, int **toBuffe
             }
 
             chsend(toChlidren[request[0]][0][1], &resp_dl, sizeof(int));
-            // printf("process %d awaiting: %d\n", request[0], waiting[request[0]][1]);
             break;
         }
     }
